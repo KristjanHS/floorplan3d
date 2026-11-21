@@ -7,7 +7,7 @@ BLENDER ?= blender
 UPSTREAM := vendor/FloorplanToBlender3d
 UT := work/upstream-test
 
-.PHONY: help sync check lint fmt test audit push-gate setup-hooks pre-commit upstream-test preprocess convert export
+.PHONY: help sync check whitespace lint fmt test audit push-gate setup-hooks pre-commit upstream-test preprocess convert export
 
 help:
 	@echo "make sync     - uv sync (locked, all groups) + uv pip check"
@@ -22,7 +22,7 @@ help:
 	@echo "make audit    - uv audit: known vulnerabilities in uv.lock"
 	@echo "make setup-hooks - install pre-commit (commit) + make check (push) git hooks"
 	@echo "make pre-commit  - run all commit-stage hooks on all files"
-	@echo "make push-gate   - pre-push: clean tree + pushed ref == HEAD, then check"
+	@echo "make push-gate   - pre-push: clean tree + pushed ref == HEAD, then check (one progress line per step)"
 	@echo "make syncwt|commit|commitwt - shared worktree targets (~/.config/make/worktree.mk)"
 
 sync:
@@ -30,8 +30,10 @@ sync:
 	uv pip check
 
 check:
+	@$(MAKE) --no-print-directory whitespace lint test
+
+whitespace:
 	@git diff --check $(EMPTY_TREE) -- . ':!*.md'
-	@$(MAKE) --no-print-directory lint test
 
 lint:
 	uv run ruff check .
@@ -74,7 +76,7 @@ push-gate:
 	@test -z "$$(git status --porcelain)" || { echo "push-gate: commit or stash first — check gates the working tree" >&2; exit 1; }
 	@test -z "$${PRE_COMMIT_TO_REF:-}" || test "$$(git rev-parse "$$PRE_COMMIT_TO_REF")" = "$$(git rev-parse HEAD)" \
 	  || { echo "push-gate: push the checked-out branch, or check it out first" >&2; exit 1; }
-	@$(MAKE) --no-print-directory check
+	@scripts/gate_steps.sh whitespace lint test
 
 setup-hooks:
 	uv run pre-commit install
