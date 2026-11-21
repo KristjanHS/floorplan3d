@@ -48,6 +48,8 @@ def export(floor: plans.Floor, blender: str) -> dict:
     if not floor.raw_blend.is_file():
         raise FileNotFoundError(f"{floor.raw_blend} missing — run convert first")
     name = stem(floor)
+    path = floor.outdir / f"{name}_report.json"
+    path.unlink(missing_ok=True)  # make reads a fresh report as success; a failed run must not leave one
     args = ["--out-dir", str(floor.outdir), "--name", name, "--wall-height", str(floor.wall_height_m)]
     if floor.calibration:
         args += ["--metres-per-px", repr(floor.calibration.metres_per_px)]
@@ -55,7 +57,6 @@ def export(floor: plans.Floor, blender: str) -> dict:
     cmd = [blender, "-noaudio", "--factory-startup", "--disable-autoexec", "--background", str(floor.raw_blend)]
     cmd += ["--python-exit-code", "1"]
     subprocess.run([*cmd, "--python", str(BLENDER_SCRIPT), "--", *args], check=True, capture_output=True, text=True)
-    path = floor.outdir / f"{name}_report.json"
     report = json.loads(path.read_text())
     report["label"] = "SCALED" if floor.calibration else "UNSCALED"
     if floor.calibration:

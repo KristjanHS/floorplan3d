@@ -7,9 +7,10 @@ import pipeline_mk
 import plans
 
 
-def up_to_date(mk: Path, target: Path) -> bool:
+def make_q(mk: Path, target: Path) -> int:
+    """0 = up to date, 1 = would rebuild, 2 = the makefile itself is broken."""
     cmd = ["make", "-q", "-f", str(mk), pipeline_mk.rel(target)]
-    return subprocess.run(cmd, cwd=plans.ROOT, check=False).returncode == 0
+    return subprocess.run(cmd, cwd=plans.ROOT, check=False).returncode
 
 
 def test_calibration_edit_reruns_only_export(tmp_path):
@@ -26,9 +27,9 @@ def test_calibration_edit_reruns_only_export(tmp_path):
         p.parent.mkdir(parents=True, exist_ok=True)
         p.touch()
         os.utime(p, ns=(t + i * 1000, t + i * 1000))
-    assert up_to_date(mk, pipeline_mk.report(floor))
+    assert make_q(mk, pipeline_mk.report(floor)) == 0
 
     floor = replace(floor, calibration=replace(cal, metres=1.2))  # same report path: staleness is the stamp's doing
     mk.write_text(pipeline_mk.render([floor], tmp_path / "plans.yaml", stamps, tmp_path / "status"))
-    assert up_to_date(mk, floor.raw_blend)  # no preprocess, no Blender convert
-    assert not up_to_date(mk, pipeline_mk.report(floor))
+    assert make_q(mk, floor.raw_blend) == 0  # no preprocess, no Blender convert
+    assert make_q(mk, pipeline_mk.report(floor)) == 1

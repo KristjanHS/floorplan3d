@@ -55,7 +55,7 @@ def report(floor: plans.Floor) -> Path:
 
 def render(floors: list[plans.Floor], plans_file: Path, stamps: Path = STAMPS, status: Path = STATUS) -> str:
     py = f"uv run python scripts/{{}}.py --plans {rel(plans_file)}"
-    lines = ["BLENDER ?= blender", f".PHONY: floors {' '.join(f'done-{f.name}' for f in floors)}"]
+    lines = ["BLENDER ?= blender", ".DELETE_ON_ERROR:", f".PHONY: floors {' '.join(f'done-{f.name}' for f in floors)}"]
     lines.append(f"floors: {' '.join(f'done-{f.name}' for f in floors)}")
     for f in floors:
         if not SAFE_NAME.fullmatch(f.name):
@@ -98,10 +98,11 @@ def main() -> None:
         raise SystemExit(1 if failed else 0)
     if a.out is None:
         p.error("--out or --summary required")
+    text = render(floors, a.plans.absolute())  # validates names before they become paths below
     for f in floors:
         (STATUS / f.name).unlink(missing_ok=True)
     a.out.parent.mkdir(parents=True, exist_ok=True)
-    a.out.write_text(render(floors, a.plans.resolve()))
+    a.out.write_text(text)
 
 
 if __name__ == "__main__":

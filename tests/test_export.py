@@ -41,7 +41,8 @@ def raw_x_units(floor: plans.Floor) -> float:
 
 @pytest.fixture(scope="module")
 def converted(tmp_path_factory: pytest.TempPathFactory) -> Iterator[plans.Floor]:
-    tmp = tmp_path_factory.mktemp("e2e")  # under /tmp: convert must copy the PNG past bwrap's /tmp tmpfs
+    tmp = tmp_path_factory.mktemp("e2e")
+    assert tmp.parts[1] == "tmp"  # convert must copy the PNG past bwrap's /tmp tmpfs; this guards that
     img = cv2.imread(str(EXAMPLE), cv2.IMREAD_GRAYSCALE)
     assert img is not None
     h, w = img.shape
