@@ -5,6 +5,7 @@ import codecs
 import hashlib
 import io
 import json
+import math
 import os
 import re
 import shutil
@@ -12,7 +13,8 @@ import subprocess
 import sys
 import time
 import zipfile
-from collections.abc import Callable
+from collections import Counter
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -376,7 +378,105 @@ def push(roots: Roots, name: str) -> None:
     print(f"push: ok {name} — commit sh3d_src/{name}/{META}; reopen in SH3D")
 
 
-COMMANDS: dict[str, Callable[[Roots, str], None]] = {"pull": pull, "validate": validate, "push": push}
+PIECE_TAGS = frozenset({"pieceOfFurniture", "light", "doorOrWindow"})
+INSPECTED = PIECE_TAGS | {"home", "level", "wall", "room", "point", "furnitureGroup"}
+
+
+def read_home(tree: Path) -> etree._Element:
+    xml = tree / "Home.xml"
+    if not xml.is_file():
+        raise Sh3dError(f"{xml} not found — pull first")
+    try:
+        return etree.parse(str(xml), etree.XMLParser(resolve_entities=False, no_network=True)).getroot()
+    except etree.XMLSyntaxError as e:
+        raise Sh3dError(f"Home.xml:{e.lineno}: malformed XML: {e.msg}") from e
+
+
+def num(value: str | None) -> str:
+    return "-" if value is None else f"{float(value):g}"
+
+
+def colour(value: str | None) -> str:
+    return "-" if value is None else "#" + value[-6:].upper()  # %08X ARGB, NOTES.md (d)
+
+
+def room_points(room: etree._Element) -> list[tuple[float, float]]:
+    return [(float(p.get("x", "0")), float(p.get("y", "0"))) for p in room.iter("point")]
+
+
+def shoelace_m2(points: list[tuple[float, float]]) -> float:
+    pairs = zip(points, points[1:] + points[:1], strict=True)
+    return abs(sum(x0 * y1 - x1 * y0 for (x0, y0), (x1, y1) in pairs)) / 2 / 10_000
+
+
+def flatten_pieces(parent: etree._Element, prefix: str = "") -> Iterable[tuple[str, etree._Element]]:
+    for el in parent.iterchildren(etree.Element):
+        if el.tag == "furnitureGroup":
+            yield from flatten_pieces(el, f"{prefix}group/{el.get('id', '-')}/")
+        elif el.tag in PIECE_TAGS:
+            yield prefix + el.get("id", "-"), el
+
+
+def table(title: str, header: list[str], rows: list[list[str]]) -> list[str]:
+    widths = [max(len(r[i]) for r in [header, *rows]) for i in range(len(header))]
+    lines = ["  ".join(c.ljust(w) for c, w in zip(r, widths, strict=True)).rstrip() for r in [header, *rows]]
+    return [f"{title} ({len(rows)})", *lines, ""]
+
+
+def inspect_lines(root: etree._Element) -> list[str]:
+    home_wall_height = root.get("wallHeight")
+
+    def wall_height(wall: etree._Element) -> str:
+        if wall.get("height") is not None:
+            return num(wall.get("height"))
+        return "-" if home_wall_height is None else num(home_wall_height) + "*"
+
+    levels = [
+        [e.get("id", "-"), e.get("name", "-"), num(e.get("elevation")), num(e.get("height"))]
+        for e in root.iter("level")
+    ]
+    walls = [
+        [e.get("id", "-"), *(num(e.get(a)) for a in ("xStart", "yStart", "xEnd", "yEnd", "thickness")), wall_height(e)]
+        + [f"{colour(e.get('leftSideColor'))}/{colour(e.get('rightSideColor'))}", e.get("level", "-")]
+        for e in root.iter("wall")
+    ]
+    rooms = [
+        [e.get("id", "-"), e.get("name", "-"), f"{shoelace_m2(room_points(e)):.2f}", e.get("level", "-")]
+        for e in root.iter("room")
+    ]
+    pieces: dict[bool, list[list[str]]] = {False: [], True: []}
+    for pid, e in flatten_pieces(root):
+        angle = e.get("angle")
+        pieces[e.tag == "doorOrWindow"].append(
+            [pid, e.get("name", "-"), num(e.get("x")), num(e.get("y"))]
+            + ["-" if angle is None else f"{math.degrees(float(angle)):.1f}"]
+            + [num(e.get(a)) for a in ("width", "depth", "height")]
+            + [e.get("level", "-")]
+        )
+    piece_header = ["id", "name", "x", "y", "angle°", "width", "depth", "height", "level"]
+    unhandled = Counter(str(e.tag) for e in root.iter(etree.Element) if e.tag not in INSPECTED)
+    return [
+        *table("levels", ["id", "name", "elevation", "height"], levels),
+        *table(
+            "walls", ["id", "xStart", "yStart", "xEnd", "yEnd", "thickness", "height", "L/R colour", "level"], walls
+        ),
+        *table("rooms", ["id", "name", "area m²", "level"], rooms),
+        *table("furniture", piece_header, pieces[False]),
+        *table("doors/windows", piece_header, pieces[True]),
+        "unhandled: " + (" ".join(f"{t}×{n}" for t, n in sorted(unhandled.items())) or "none"),
+    ]
+
+
+def inspect(roots: Roots, name: str) -> None:
+    print("\n".join(inspect_lines(read_home(roots.tree(name)))))
+
+
+COMMANDS: dict[str, Callable[[Roots, str], None]] = {
+    "pull": pull,
+    "validate": validate,
+    "push": push,
+    "inspect": inspect,
+}
 
 
 def build_parser() -> argparse.ArgumentParser:

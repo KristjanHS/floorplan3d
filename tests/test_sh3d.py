@@ -312,3 +312,25 @@ def test_push_refuses_unknown_src_file(roots: sh3d.Roots, pulled: Path, capsys: 
     (pulled / "2").write_bytes(b"new texture")
     assert run(roots, "push", "x") == 1
     assert "unknown file(s)" in capsys.readouterr().err
+
+
+def test_inspect_tables(roots: sh3d.Roots, pulled: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    edit_xml(pulled, b"<wall ", b"<wall id='w2' xStart='0' yStart='0' xEnd='0' yEnd='400' thickness='10'/><wall ")
+    edit_xml(pulled, b"thickness='10' height='250'", b"thickness='10' height='240' leftSideColor='FF00FF80'")
+    edit_xml(
+        pulled,
+        b"<doorOrWindow",
+        b"<furnitureGroup id='g1' name='G'><pieceOfFurniture id='c1' name='Chair'/>"
+        b"</furnitureGroup><label text='hi'/><label text='yo'/><doorOrWindow",
+    )
+    capsys.readouterr()
+    assert run(roots, "inspect", "x") == 0
+    lines = capsys.readouterr().out.splitlines()
+    rows = {line.split()[0]: line.split() for line in lines if line and not line.startswith(("unhandled", "id "))}
+    assert rows["w1"][6:8] == ["240", "#00FF80/-"]
+    assert rows["w2"][6] == "250*"  # no height → home wallHeight
+    assert rows["r1"][2] == "20.00"  # 500 × 400 cm
+    assert rows["p1"][1] == "Sofa" and rows["p1"][4] == "0.0"
+    assert "group/g1/c1" in rows
+    assert "d1" in rows and "furniture (2)" in lines and "doors/windows (1)" in lines
+    assert lines[-1] == "unhandled: label×2"
