@@ -55,7 +55,7 @@ floors:
 If calibration is missing, still run, but label the output `UNSCALED` and tell me.
 
 ## Steps
-1. `git init`, create layout, `.gitignore`, add submodule pinned at `2da4c95` (vetted: `docs/security-review-FloorplanToBlender3d.md`), set up venv, install upstream's run-path deps at current versions (never its `requirements.txt` pins) + `pymupdf`, `opencv-python`, `pyyaml`. Check `blender --version`; if missing, tell me how to install it (don't install system packages without asking).
+1. `git init`, create layout, `.gitignore`, add submodule pinned at `2da4c95` (vetted: `docs/security-review-FloorplanToBlender3d.md`), set up venv, install upstream's run-path deps at current versions (never its `requirements.txt` pins) + `pymupdf`, `pyyaml`. Check `blender --version`; if missing, tell me how to install it (don't install system packages without asking).
 2. Run upstream's own example/test (`Testing/`, `pytest`) once to confirm the install works before touching my files.
 3. `preprocess.py`: render PDF page with PyMuPDF at ~150 DPI → grayscale → deskew → binarize (Otsu/adaptive) → remove small specks → downscale so the long side is ≤ ~1000 px (tune if detection fails). Save the PNG plus the scale factor used, so calibration points stay valid.
 4. `convert.py`: for each floor, call upstream non-interactively; move result to `output/<name>/<name>.blend`.
