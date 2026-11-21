@@ -1,10 +1,13 @@
 """plans.yaml loading shared by the pipeline scripts."""
 
+import json
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import yaml
+
+Point = tuple[float, float]
 
 ROOT = Path(__file__).resolve().parent.parent
 WORK = ROOT / "work"
@@ -16,6 +19,7 @@ class Calibration:
     p1: tuple[float, float]
     p2: tuple[float, float]
     metres: float
+    basis: float | None = None  # preprocess downscale p1/p2 were picked at; None = the current work PNG
 
     @property
     def pixels(self) -> float:
@@ -60,13 +64,39 @@ class Floor:
     def outdir(self) -> Path:
         return self.output / self.name
 
+    def downscale(self) -> float:
+        """The current work PNG's downscale, from preprocess's meta."""
+        if not self.meta.is_file():
+            raise FileNotFoundError(f"{self.meta} missing — run preprocess (px basis needs the work PNG's downscale)")
+        return float(json.loads(self.meta.read_text())["downscale"])
+
+    def work_px(self, pt: Point, basis: float | None) -> Point:
+        """`pt` picked at downscale `basis` (None = the current work PNG), in current work-PNG px."""
+        return pt if basis is None else at_downscale(pt, basis, self.downscale())
+
+    def calibration_px(self) -> Calibration | None:
+        """The calibration with p1/p2 in current work-PNG px (the only form metres_per_px is valid in)."""
+        cal = self.calibration
+        if cal is None or cal.basis is None:
+            return cal
+        return replace(cal, p1=self.work_px(cal.p1, cal.basis), p2=self.work_px(cal.p2, cal.basis), basis=None)
+
+
+def at_downscale(pt: Point, basis: float, downscale: float) -> Point:
+    """A point picked on a work PNG made at downscale `basis`, in px of one made at `downscale`."""
+    k = downscale / basis
+    return pt[0] * k, pt[1] * k
+
 
 def _calibration(raw: dict | None) -> Calibration | None:
     if not raw:
         return None
-    cal = Calibration(tuple(raw["p1"]), tuple(raw["p2"]), float(raw["metres"]))
+    basis = None if raw.get("basis") is None else float(raw["basis"])
+    cal = Calibration(tuple(raw["p1"]), tuple(raw["p2"]), float(raw["metres"]), basis)
     if cal.pixels == 0 or cal.metres <= 0:
         raise ValueError(f"calibration needs two distinct points and metres > 0: {raw}")
+    if basis is not None and not 0 < basis <= 1:
+        raise ValueError(f"calibration basis is a preprocess downscale in (0, 1]: {raw}")
     return cal
 
 

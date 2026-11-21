@@ -74,6 +74,16 @@ def test_room_inside_outline_keeps_every_wall_and_face(tmp_path: Path):
     assert all(f["present"] for fs in res["targets"][0]["faces"].values() for f in fs)
 
 
+def test_basis_rescales_targets_to_the_current_work_png(tmp_path: Path):
+    meta = tmp_path / "meta.json"
+    meta.write_text(json.dumps({"downscale": 0.8}))
+    half = "room=54.75,115:244.75,115"  # ROOM picked on a work PNG at downscale 0.4
+    res = run_probe(tmp_path, framed_room(), [half], ("--basis", "0.4", "--meta", str(meta)))
+    t = res["targets"][0]
+    assert t["p1"] == pytest.approx([109.5, 230]) and t["p2"] == pytest.approx([489.5, 230])
+    assert all(f["present"] for fs in t["faces"].values() for f in fs)
+
+
 def test_walls_on_the_outline_are_dropped_by_the_contour_filter(tmp_path: Path):
     img = np.full((460, 600), 255, np.uint8)
     ring(img, 100, 80, 500, 380, gap=(280, 330))  # the previous test's room without the frame

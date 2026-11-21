@@ -74,16 +74,22 @@ def scaled_report(floor: plans.Floor) -> dict:
         raise SystemExit(
             f"{path} is unscaled — measure needs a scaled export (calibration in plans.yaml + make models)"
         )
-    if not math.isclose(report["metres_per_px"], floor.calibration.metres_per_px, rel_tol=1e-9):
+    cal = floor.calibration_px()
+    assert cal is not None
+    if not math.isclose(report["metres_per_px"], cal.metres_per_px, rel_tol=1e-9):
         raise SystemExit(f"{path}: metres_per_px {report['metres_per_px']} != plans.yaml calibration — make models")
     return report
 
 
-def measure(floor: plans.Floor, p1: Point, p2: Point, blender: str) -> tuple[float, Point, Point]:
+def measure(
+    floor: plans.Floor, p1: Point, p2: Point, blender: str, basis: float | None = None
+) -> tuple[float, Point, Point]:
     """Span in metres between the first wall hits from the p1-p2 midpoint towards p1 and towards p2.
 
     p1/p2 sit on the inner wall faces, so each hit must land near its point; returns the hits in work-PNG px.
+    basis: the preprocess downscale p1/p2 were picked at (None = the current work PNG).
     """
+    p1, p2 = floor.work_px(p1, basis), floor.work_px(p2, basis)
     if p1 == p2:
         raise SystemExit(f"p1 and p2 are the same point {p1}")
     report = scaled_report(floor)
@@ -135,10 +141,13 @@ def main() -> None:
     p.add_argument("floor")
     p.add_argument("--p1", type=point, required=True, help="work-PNG px X,Y on the inner wall face")
     p.add_argument("--p2", type=point, required=True, help="work-PNG px X,Y on the opposite inner wall face")
+    p.add_argument("--basis", type=float, help="downscale --p1/--p2 were picked at (default: current work PNG)")
     p.add_argument("--expect", type=float, help="printed metres; exit non-zero beyond ±3 %%")
     p.add_argument("--plans", type=Path, default=plans.ROOT / "plans.yaml")
     p.add_argument("--blender", default=shutil.which("blender") or "blender")
     a = p.parse_args()
+    if a.basis is not None and not 0 < a.basis <= 1:
+        p.error(f"--basis is a preprocess downscale in (0, 1], got {a.basis}")
     if a.expect is not None and a.expect <= 0:
         p.error(f"--expect must be > 0 metres, got {a.expect}")
     blender = shutil.which(a.blender)
@@ -148,7 +157,7 @@ def main() -> None:
     if floor is None:
         raise SystemExit(f"no floor {a.floor!r} in {a.plans}")
     try:
-        span, h1, h2 = measure(floor, a.p1, a.p2, os.path.realpath(blender))
+        span, h1, h2 = measure(floor, a.p1, a.p2, os.path.realpath(blender), a.basis)
     except subprocess.CalledProcessError as e:
         raise SystemExit(f"Blender measure failed for {floor.name}:\n{e.stdout[-2000:]}\n{e.stderr[-2000:]}") from e
     print(f"{floor.name}: span {span:.3f} m; wall hits at work-PNG px p1-side {_fmt(h1)}, p2-side {_fmt(h2)}")

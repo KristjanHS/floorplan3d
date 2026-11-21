@@ -3,6 +3,8 @@ import subprocess
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 import pipeline_mk
 import plans
 
@@ -13,7 +15,8 @@ def make_q(mk: Path, target: Path) -> int:
     return subprocess.run(cmd, cwd=plans.ROOT, check=False).returncode
 
 
-def test_calibration_edit_reruns_only_export(tmp_path):
+@pytest.mark.parametrize("edit", [{"metres": 1.2}, {"basis": 0.5}], ids=["metres", "basis"])
+def test_calibration_edit_reruns_only_export(tmp_path, edit):
     pdf = tmp_path / "f.pdf"
     pdf.write_bytes(b"%PDF-1.7")
     cal = plans.Calibration((0.0, 0.0), (100.0, 0.0), 1.0)
@@ -29,7 +32,7 @@ def test_calibration_edit_reruns_only_export(tmp_path):
         os.utime(p, ns=(t + i * 1000, t + i * 1000))
     assert make_q(mk, pipeline_mk.report(floor)) == 0
 
-    floor = replace(floor, calibration=replace(cal, metres=1.2))  # same report path: staleness is the stamp's doing
+    floor = replace(floor, calibration=replace(cal, **edit))  # same report path: staleness is the stamp's doing
     mk.write_text(pipeline_mk.render([floor], tmp_path / "plans.yaml", stamps, tmp_path / "status"))
     assert make_q(mk, floor.raw_blend) == 0  # no preprocess, no Blender convert
     assert make_q(mk, pipeline_mk.report(floor)) == 1

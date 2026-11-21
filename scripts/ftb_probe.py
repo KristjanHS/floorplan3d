@@ -22,6 +22,7 @@ import numpy as np
 from FloorplanToBlenderLib import IO, calculate, const, detect, floorplan
 
 import ftb_generate  # noqa: F401 — applies its cv2/numpy shims
+import plans
 
 DROP_RATIO = 0.90  # a stage whose x or y extent is < 0.90 × S0's lost part of the drawing
 FACE_TOL = 0.03  # S1 face counts when the ray hits within ±3 % of the p1–p2 span (+ DILATE_PX) of the point
@@ -37,12 +38,14 @@ Point = tuple[float, float]
 Segment = tuple[Point, Point]
 
 
-def parse_target(s: str) -> dict:
-    """`[id=]x1,y1:x2,y2` in work-PNG px."""
+def parse_target(s: str, scale: tuple[float, float] | None = None) -> dict:
+    """`[id=]x1,y1:x2,y2` in work-PNG px; scale = (basis, downscale) when picked on another work PNG."""
     tid, _, coords = s.rpartition("=")
     p1, p2 = (tuple(float(v) for v in half.split(",")) for half in coords.split(":"))
     if len(p1) != 2 or len(p2) != 2 or p1 == p2:
         raise SystemExit(f"bad target {s!r}: want [id=]x1,y1:x2,y2 with distinct points")
+    if scale:
+        p1, p2 = plans.at_downscale(p1, *scale), plans.at_downscale(p2, *scale)
     return {"id": tid or coords, "p1": p1, "p2": p2}
 
 
@@ -217,9 +220,18 @@ def main() -> None:
     p.add_argument("ini", type=Path)
     p.add_argument("--report", type=Path, help="export report json (S6)")
     p.add_argument("--target", action="append", default=[], help="[id=]x1,y1:x2,y2 work-PNG px (repeatable)")
+    p.add_argument("--basis", type=float, help="downscale the targets were picked at (needs --meta)")
+    p.add_argument("--meta", type=Path, help="preprocess meta json holding the current work PNG's downscale")
     p.add_argument("--out", type=Path, help="write the result json here")
     a = p.parse_args()
-    res = probe(a.ini, a.report, [parse_target(s) for s in a.target])
+    scale = None
+    if a.basis is not None:
+        if not 0 < a.basis <= 1:
+            p.error(f"--basis is a preprocess downscale in (0, 1], got {a.basis}")
+        if a.meta is None or not a.meta.is_file():
+            p.error(f"--basis needs --meta with the work PNG's downscale, got {a.meta}")
+        scale = (a.basis, float(json.loads(a.meta.read_text())["downscale"]))
+    res = probe(a.ini, a.report, [parse_target(s, scale) for s in a.target])
     if a.out:
         a.out.write_text(json.dumps(res, indent=2) + "\n")
     print(table(res))

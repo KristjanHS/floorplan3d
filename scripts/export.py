@@ -31,8 +31,9 @@ def drawn_extent_px(floor: plans.Floor) -> tuple[int, int]:
 
 def wall_check(floor: plans.Floor, report: dict) -> dict:
     """Model XY extent vs the drawn extent (PNG bbox x metres_per_px)."""
-    assert floor.calibration is not None
-    mpp = floor.calibration.metres_per_px
+    cal = floor.calibration_px()
+    assert cal is not None
+    mpp = cal.metres_per_px
     drawn = [px * mpp for px in drawn_extent_px(floor)]
     model = report["extent_m"][:2]
     diff = [abs(m - d) / d for m, d in zip(model, drawn, strict=True)]
@@ -51,15 +52,17 @@ def export(floor: plans.Floor, blender: str) -> dict:
     path = floor.outdir / f"{name}_report.json"
     path.unlink(missing_ok=True)  # make reads a fresh report as success; a failed run must not leave one
     args = ["--out-dir", str(floor.outdir), "--name", name, "--wall-height", str(floor.wall_height_m)]
-    if floor.calibration:
-        args += ["--metres-per-px", repr(floor.calibration.metres_per_px)]
+    cal = floor.calibration_px()
+    if cal:
+        args += ["--metres-per-px", repr(cal.metres_per_px)]
     # The raw .blend is sandbox-written: no startup file, no auto-run scripts.
     cmd = [blender, "-noaudio", "--factory-startup", "--disable-autoexec", "--background", str(floor.raw_blend)]
     cmd += ["--python-exit-code", "1"]
     subprocess.run([*cmd, "--python", str(BLENDER_SCRIPT), "--", *args], check=True, capture_output=True, text=True)
     report = json.loads(path.read_text())
-    report["label"] = "SCALED" if floor.calibration else "UNSCALED"
-    if floor.calibration:
+    report["label"] = "SCALED" if cal else "UNSCALED"
+    if cal:
+        report["calibration_px"] = {"p1": cal.p1, "p2": cal.p2, "basis": floor.calibration and floor.calibration.basis}
         report["wall_check"] = wall_check(floor, report)
     path.write_text(json.dumps(report, indent=2) + "\n")
     return report
@@ -70,11 +73,12 @@ def summary(floor: plans.Floor, report: dict) -> str:
     if not floor.calibration:
         return f"{out}\n  WARNING: no calibration in plans.yaml — UNSCALED (1 unit = 100 px), wall check skipped"
     c, cal = report["wall_check"], floor.calibration
+    p1, p2 = (tuple(round(v, 2) for v in p) for p in (report["calibration_px"]["p1"], report["calibration_px"]["p2"]))
     lo, hi = cal.metres * (1 - TOLERANCE), cal.metres * (1 + TOLERANCE)
     return (
         f"{out} extent_m={report['extent_m']}\n"
         f"  wall check {c['status']}: model {c['model_m']} m vs drawn {c['drawn_m']} m, diff {c['diff_pct']} %\n"
-        f"  calibration: in {stem(floor)}.blend measure the wall at PNG {cal.p1}->{cal.p2}; "
+        f"  calibration: in {stem(floor)}.blend measure the wall at PNG {p1}->{p2}; "
         f"expect {cal.metres} m ({lo:.2f}..{hi:.2f})"
     )
 

@@ -59,6 +59,20 @@ def test_measure_span_matches_upstream_walls(scaled):
     assert h1 == pytest.approx((left, y), abs=0.5) and h2 == pytest.approx((right, y), abs=0.5)  # hits back in px
 
 
+def test_measure_basis_rescales_points_picked_on_another_work_png(scaled):
+    (x, y), half = KLK, scaled.downscale() / 2  # points picked on a work PNG at half today's size
+    left, right = wall_faces_px(scaled, y, x)
+    span, h1, _ = measure.measure(scaled, (left / 2, y / 2), (right / 2, y / 2), str(BLENDER), basis=half)
+    assert span == pytest.approx((right - left) * CAL.metres_per_px, abs=0.5 * CAL.metres_per_px)
+    assert h1 == pytest.approx((left, y), abs=0.5)  # hits come back in current work px
+
+
+def test_scaled_report_accepts_the_same_calibration_given_at_another_basis(scaled):
+    half = scaled.downscale() / 2
+    same = plans.Calibration((0.0, 0.0), (100.0, 0.0), CAL.metres, basis=half)  # = CAL's 200 px today
+    assert measure.scaled_report(replace(scaled, calibration=same))["metres_per_px"] == pytest.approx(CAL.metres_per_px)
+
+
 def test_measure_rejects_a_midpoint_inside_a_wall(scaled):
     """ray_cast hits back faces: from inside a wall both rays stop at its own faces, a thickness-wide span."""
     (x, y) = KLK

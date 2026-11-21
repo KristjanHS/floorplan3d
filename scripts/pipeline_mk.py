@@ -44,7 +44,7 @@ def preprocess_inputs(floor: plans.Floor) -> dict:
 def export_inputs(floor: plans.Floor) -> dict:
     cal = floor.calibration
     return {
-        "calibration": cal and {"p1": cal.p1, "p2": cal.p2, "metres": cal.metres},
+        "calibration": cal and {"p1": cal.p1, "p2": cal.p2, "metres": cal.metres, "basis": cal.basis},
         "wall_height_m": floor.wall_height_m,
     }
 
