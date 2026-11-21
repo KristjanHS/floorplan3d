@@ -1,6 +1,6 @@
 # SH3D auto walls — generate internal walls into Home.xml, user fixes in the GUI
 
-Status: proposed 2026-11-21. Goal: `make walls NAME=<name>` writes detected walls into `sh3d_src/<NAME>/Home.xml`, tagged as generated;
+Status: in progress — Stages 1–2 committed 2026-11-21; next Stage 3.1. Goal: `make walls NAME=<name>` writes detected walls into `sh3d_src/<NAME>/Home.xml`, tagged as generated;
 the user then edits (not traces) them in SweetHome3D. Measured results (scores, overlay verdicts) → a local results doc, never here.
 
 ## Rulings (user, 2026-11-21)
