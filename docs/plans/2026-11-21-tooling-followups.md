@@ -9,18 +9,6 @@ itself lives in `FLOORPLAN_TO_3D_SETUP.md`.
   but on `~/.local/bin/pre-commit` (3.8.0), not the locked 4.7.0.
 - Fix: re-run `make sync`. Optionally make `make setup-hooks` depend on `sync`.
 
-## 2. pyright checks nothing until `scripts/` and `tests/` exist
-
-- `[tool.pyright] include = ["scripts", "tests"]` points at folders that don't exist yet, so `make lint`
-  passes without checking anything.
-- Re-verify after build step 1: a planted type error under `scripts/` must fail `make check`.
-
-## 3. Blender is not installed
-
-- No target needs it yet. Build step 1 checks `blender --version` and asks before installing system
-  packages.
-- When adding the build targets, bring back `BLENDER ?= blender` in the Makefile.
-
 ## 4. Blender's bundled Python version may differ from 3.12
 
 - ruff and pyright check against `requires-python` (3.12). `bpy` scripts run on Blender's bundled Python,

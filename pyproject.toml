@@ -16,6 +16,8 @@ dependencies = [
 
 [tool.ruff]
 line-length = 120
+# scripts/ modules import each other flat; mark them first-party for isort.
+src = ["scripts"]
 # extend-exclude, not exclude: the bare key replaces ruff's defaults (.venv, …).
 # **/*.md: ruff >=0.16 formats Python code blocks inside Markdown — keep docs/rules untouched.
 extend-exclude = ["vendor", "**/*.md"]
@@ -23,6 +25,7 @@ extend-exclude = ["vendor", "**/*.md"]
 [tool.pyright]
 include = ["scripts", "tests"]
 exclude = ["vendor", ".venv"]
+extraPaths = ["scripts"]
 
 [tool.pytest.ini_options]
 pythonpath = ["scripts"]
