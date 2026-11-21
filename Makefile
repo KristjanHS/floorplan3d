@@ -7,8 +7,19 @@ BLENDER ?= blender
 PLANS ?= plans.yaml
 UPSTREAM := vendor/FloorplanToBlender3d
 UT := work/upstream-test
+SH3D_SRC_ZIP ?= work/sh3d-src/SweetHome3D-7.6.1-src.zip
+SH3D_DTD := work/sh3d/SweetHome3D.dtd
+SH3D := uv run python scripts/sh3d.py --dtd $(SH3D_DTD)
+SH3D_CMDS := pull push validate inspect preview
 
-.PHONY: help sync check whitespace lint fmt test audit push-gate setup-hooks pre-commit upstream-test preprocess convert export models probe
+ifneq ($(filter $(SH3D_CMDS),$(MAKECMDGOALS)),)
+# Command line only: WSL exports NAME=<hostname> into every shell.
+ifneq ($(origin NAME),command line)
+$(error NAME= required: make <$(SH3D_CMDS)> NAME=<home>)
+endif
+endif
+
+.PHONY: help sync check whitespace lint fmt test audit push-gate setup-hooks pre-commit upstream-test preprocess convert export models probe sh3d-dtd $(SH3D_CMDS)
 
 help:
 	@echo "make sync     - uv sync (locked, all groups) + uv pip check"
@@ -21,6 +32,8 @@ help:
 	@echo "make convert    - sandboxed upstream run per floor -> work/<floor>/<floor>_raw.blend"
 	@echo "make export     - Blender: scale raw blend -> output/<floor>/ .blend .glb .obj previews + wall check"
 	@echo "make probe FLOOR=<f> [TARGETS='id=x1,y1:x2,y2 ...'] [BASIS=<ds>] - per-stage wall loss of the last convert -> work/<f>/probe.json"
+	@echo "make pull|push|validate|inspect|preview NAME=<home> - SweetHome3D homes/<home>.sh3d <-> sh3d_src/<home>/"
+	@echo "make sh3d-dtd  - rebuild work/sh3d/SweetHome3D.dtd from SH3D_SRC_ZIP (validate/push run it)"
 	@echo "make upstream-test - upstream's own tests, sandboxed (no display tests)"
 	@echo "make audit    - uv audit: known vulnerabilities in uv.lock"
 	@echo "make setup-hooks - install pre-commit (commit) + make check (push) git hooks"
@@ -91,6 +104,18 @@ upstream-test:
 
 audit:
 	uv audit
+
+sh3d-dtd:
+	$(SH3D) dtd --src-zip $(SH3D_SRC_ZIP)
+
+validate push: sh3d-dtd
+
+pull validate inspect preview:
+	$(SH3D) $@ $(NAME)
+
+push:
+	$(SH3D) push $(NAME)
+	@wslpath -w "$$(realpath homes)/$(NAME).sh3d"
 
 # Pre-push gate. `check` reads the working tree, so require it to BE the pushed commit:
 # clean (untracked included) and the pushed ref == HEAD (PRE_COMMIT_TO_REF set by pre-commit).

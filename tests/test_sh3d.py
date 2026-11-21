@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import subprocess
 import zipfile
@@ -351,3 +352,21 @@ def test_preview_writes_png_under_work(roots: sh3d.Roots, pulled: Path, capsys: 
     assert png.read_bytes().startswith(b"\x89PNG") and png.stat().st_size > 1024
     assert {p: p.read_bytes() for p in roots.src.rglob("*") if p.is_file() and ".git" not in p.parts} == before
     assert "unhandled: curved walls drawn straight: w1" in capsys.readouterr().out
+
+
+REPO = Path(__file__).resolve().parents[1]
+
+
+def make_n(*args: str) -> subprocess.CompletedProcess[str]:
+    env = os.environ | {"NAME": "wsl-hostname"}
+    return subprocess.run(["make", "-n", "-C", str(REPO), *args], capture_output=True, text=True, env=env, check=False)
+
+
+def test_make_sh3d_target_requires_name_on_command_line() -> None:
+    r = make_n("inspect")
+    assert r.returncode != 0 and "NAME" in r.stderr
+
+
+def test_make_sh3d_target_passes_name() -> None:
+    r = make_n("inspect", "NAME=x")
+    assert r.returncode == 0 and "scripts/sh3d.py --dtd work/sh3d/SweetHome3D.dtd inspect x" in r.stdout
