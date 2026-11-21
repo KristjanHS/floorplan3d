@@ -29,8 +29,11 @@ sync:
 	uv sync --locked --all-groups
 	uv pip check
 
+# One step list for check (syncwt) and push-gate; run in order, stopping at the first failure.
+CHECK_STEPS := whitespace lint test
+
 check:
-	@$(MAKE) --no-print-directory whitespace lint test
+	@for s in $(CHECK_STEPS); do $(MAKE) --no-print-directory $$s || exit; done
 
 whitespace:
 	@git diff --check $(EMPTY_TREE) -- . ':!*.md'
@@ -76,7 +79,7 @@ push-gate:
 	@test -z "$$(git status --porcelain)" || { echo "push-gate: commit or stash first — check gates the working tree" >&2; exit 1; }
 	@test -z "$${PRE_COMMIT_TO_REF:-}" || test "$$(git rev-parse "$$PRE_COMMIT_TO_REF")" = "$$(git rev-parse HEAD)" \
 	  || { echo "push-gate: push the checked-out branch, or check it out first" >&2; exit 1; }
-	@scripts/gate_steps.sh whitespace lint test
+	+@MAKE='$(MAKE)' scripts/gate_steps.sh $(CHECK_STEPS)
 
 setup-hooks:
 	uv run pre-commit install
