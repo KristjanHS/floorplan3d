@@ -62,7 +62,7 @@ upstream-test:
 	# test_config reads ../Configs, which upstream only creates on a first run from the repo root.
 	uv run python scripts/sandbox.py --rw $(UT) --chdir $(UT) -- \
 	  $(abspath .venv/bin/python) -c 'from FloorplanToBlenderLib import config; config.generate_file()'
-	MPLBACKEND=Agg uv run python scripts/sandbox.py --rw $(UT) --chdir $(UT)/Testing -- \
+	uv run python scripts/sandbox.py --rw $(UT) --env MPLBACKEND=Agg --chdir $(UT)/Testing -- \
 	  $(abspath .venv/bin/python) -m pytest -q -p no:cacheprovider -c /dev/null --rootdir=. --ignore=visuals
 
 audit:

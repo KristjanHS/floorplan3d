@@ -51,7 +51,9 @@ def export(floor: plans.Floor, blender: str) -> dict:
     args = ["--out-dir", str(floor.outdir), "--name", name, "--wall-height", str(floor.wall_height_m)]
     if floor.calibration:
         args += ["--metres-per-px", repr(floor.calibration.metres_per_px)]
-    cmd = [blender, "-noaudio", "--background", str(floor.raw_blend), "--python-exit-code", "1"]
+    # The raw .blend is sandbox-written: no startup file, no auto-run scripts.
+    cmd = [blender, "-noaudio", "--factory-startup", "--disable-autoexec", "--background", str(floor.raw_blend)]
+    cmd += ["--python-exit-code", "1"]
     subprocess.run([*cmd, "--python", str(BLENDER_SCRIPT), "--", *args], check=True, capture_output=True, text=True)
     path = floor.outdir / f"{name}_report.json"
     report = json.loads(path.read_text())

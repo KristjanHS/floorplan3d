@@ -35,12 +35,22 @@ def write_config(path: Path, image: Path) -> None:
 
 def blender_argv(blender: str, scratch: Path, data_path: str) -> list[str]:
     # Upstream's script reads sys.argv positionally: [5] program_path, [6] target, [7:] data dirs.
-    return [blender, "-noaudio", "--background", "--python", str(BLENDER_SCRIPT), str(scratch), TARGET, data_path]
+    return [
+        blender,
+        "--factory-startup",
+        "--background",
+        "--python",
+        str(BLENDER_SCRIPT),
+        str(scratch),
+        TARGET,
+        data_path,
+    ]
 
 
 def convert(floor: plans.Floor, blender: str) -> Path:
     if not floor.png.is_file():
         raise FileNotFoundError(f"{floor.png} missing — run preprocess first")
+    floor.raw_blend.unlink(missing_ok=True)  # a failed run must not leave old geometry for export
     scratch = floor.work / floor.name / "ftb"
     shutil.rmtree(scratch, ignore_errors=True)
     scratch.mkdir(parents=True)
@@ -52,14 +62,14 @@ def convert(floor: plans.Floor, blender: str) -> Path:
     env = {"MPLBACKEND": "Agg"}
     python = str(plans.ROOT / ".venv" / "bin" / "python")
     gen = sandbox.bwrap_cmd(
-        [python, "-I", str(plans.ROOT / "scripts" / "ftb_generate.py"), str(ini)], [scratch], scratch
+        [python, "-I", str(plans.ROOT / "scripts" / "ftb_generate.py"), str(ini)], [scratch], scratch, env=env
     )
-    out = subprocess.run(gen, check=False, capture_output=True, text=True, env={**os.environ, **env})
+    out = subprocess.run(gen, check=False, capture_output=True, text=True)
     if out.returncode != 0:
         raise RuntimeError(f"upstream detection failed for {floor.name}:\n{out.stderr[-3000:]}")
     data_path = out.stdout.strip().splitlines()[-1]
 
-    build = sandbox.bwrap_cmd(blender_argv(blender, scratch, data_path), [scratch], scratch)
+    build = sandbox.bwrap_cmd(blender_argv(blender, scratch, data_path), [scratch], scratch, ro=[Path(blender).parent])
     res = subprocess.run(build, check=False, capture_output=True, text=True)
     blend = scratch / TARGET.lstrip("/")
     # Upstream's script always exit(0)s, so failure shows only as a traceback / missing file.

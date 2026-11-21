@@ -71,6 +71,9 @@ def test_export_scales_to_calibration(converted, tmp_path):
     x, _, z = report["extent_m"]
     assert z == pytest.approx(WALL_H, rel=0.01)
     assert x == pytest.approx(raw_x_units(floor) * 100 * CAL.metres_per_px, rel=0.05)
+    img = cv2.imread(str(floor.png), cv2.IMREAD_GRAYSCALE)
+    _, _, w, h = cv2.boundingRect(cv2.findNonZero((img == 0).astype("uint8")))
+    assert report["wall_check"]["drawn_m"] == pytest.approx([w * CAL.metres_per_px, h * CAL.metres_per_px], rel=0.01)
 
 
 def test_export_unscaled_is_labelled(converted, tmp_path):
