@@ -14,7 +14,8 @@
 - (c) No `ContentDigests` → digest check skipped (`contentDigests == null`): `io/HomeContentContext.java:112,154`.
 - (d) Lengths cm (`model/LengthUnit.java:122,187` CENTIMETER identity), angles radians (`model/HomePieceOfFurniture.java:1362`), colours `%08X` ARGB (`io/XMLWriter.java:198`).
 - (e) `CONTENT_ATTRS` = `model icon planIcon image`, + `property value` when `type="CONTENT"`: `io/HomeXMLHandler.java:798,820,1235-1237,1800`; URL first, else entry (`:1929`).
-- (f) `NUMERIC_ATTRS` = every name in `parse(Optional)?(Float|Integer|Long|Decimal)(attributes…, "<name>")` calls, `io/HomeXMLHandler.java`; `Float.parseFloat` accepts `NaN` (`:1916`).
+- (f) `io/HomeXMLHandler.java` `parse(Optional)?<T>(attributes…, "<name>")` calls: `NUMERIC_ATTRS` = Float|Decimal, `INT_ATTRS` = Integer|Long,
+  `COLOR_ATTRS` = Color (`Long.parseLong(v, 16)`); `Float.parseFloat` accepts `NaN` (`:1916`).
 - DTD as shipped fails lxml: patch `renderer CADATA`→`CDATA`, `lightSourceMaterial name #REQUIRED`→`name CDATA #REQUIRED`, `endMarkSize CDATA "10";`→`"10"`.
 
 ## Upstream quirks

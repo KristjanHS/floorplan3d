@@ -17,6 +17,13 @@ ifneq ($(filter $(SH3D_CMDS),$(MAKECMDGOALS)),)
 ifneq ($(origin NAME),command line)
 $(error NAME= required: make <$(SH3D_CMDS)> NAME=<home>)
 endif
+# NAME reaches the recipe shell before sh3d.py's own check: one word, every char dropped by sh3d_drop.
+SH3D_NAME_CHARS := a b c d e f g h i j k l m n o p q r s t u v w x y z A B C D E F G H I J K L M N O P Q R S T U V W X Y Z \
+  0 1 2 3 4 5 6 7 8 9 _ -
+sh3d_drop = $(if $(1),$(call sh3d_drop,$(wordlist 2,$(words $(1)),$(1)),$(subst $(firstword $(1)),,$(2))),$(2))
+ifneq ($(words $(NAME))$(call sh3d_drop,$(SH3D_NAME_CHARS),$(NAME)),1)
+$(error NAME='$(NAME)' must match [A-Za-z0-9_-]+)
+endif
 endif
 
 .PHONY: help sync check whitespace lint fmt test audit push-gate setup-hooks pre-commit upstream-test preprocess convert export models probe sh3d-dtd $(SH3D_CMDS)

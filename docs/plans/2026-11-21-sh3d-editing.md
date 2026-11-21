@@ -107,7 +107,7 @@ Refactor-first: skipped — `scripts/sh3d.py` is a new standalone module; no exi
 ### Stage 4.1 Makefile targets
 - Focus: `Makefile`, `tests/test_sh3d.py`.
 - `SH3D_SRC_ZIP ?= work/sh3d-src/SweetHome3D-7.6.1-src.zip`, `SH3D_DTD := work/sh3d/SweetHome3D.dtd`.
-- Parse-time guard: `ifneq ($(filter pull push validate inspect preview,$(MAKECMDGOALS)),)` + `ifndef NAME` → `$(error NAME= required)`.
+- Parse-time guard: `ifneq ($(filter pull push validate inspect preview,$(MAKECMDGOALS)),)` + `$(origin NAME)` ≠ `command line` or NAME ∉ `[A-Za-z0-9_-]+` → `$(error …)` (WSL exports NAME).
 - `sh3d-dtd` (phony, always rebuilds): `uv run python scripts/sh3d.py --dtd $(SH3D_DTD) dtd --src-zip $(SH3D_SRC_ZIP)`.
 - `validate push: sh3d-dtd`; each target runs `uv run python scripts/sh3d.py <cmd> $(NAME)`; `push` then prints
   `wslpath -w "$$(realpath homes)/$(NAME).sh3d"`.

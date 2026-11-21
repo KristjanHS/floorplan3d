@@ -28,7 +28,8 @@ DROP_HOME_ENTRY = False  # NOTES.md (a): Home.xml wins over Home in 7.6.1
 DROPPED = frozenset({"ContentDigests", "Home"} if DROP_HOME_ENTRY else {"ContentDigests"})
 META = ".sh3d_meta.json"
 CONTENT_ATTRS = frozenset({"model", "icon", "planIcon", "image"})  # NOTES.md (e); + property value when type=CONTENT
-# NOTES.md (f); pinned from the 7.6.1 source — test_numeric_attrs_match_source re-derives it.
+# NOTES.md (f); pinned from the 7.6.1 source — test_numeric_attrs_match_source re-derives all three sets.
+# NUMERIC: parse(Optional)Float/Decimal; INT: parseOptionalInteger/Long; COLOR: parseOptionalColor (hex).
 NUMERIC_ATTRS = frozenset(
     [
         "angle",
@@ -37,7 +38,6 @@ NUMERIC_ATTRS = frozenset(
         "areaXOffset",
         "areaYOffset",
         "ceilingShininess",
-        "creationDate",
         "dashOffset",
         "depth",
         "depthInPlan",
@@ -45,7 +45,6 @@ NUMERIC_ATTRS = frozenset(
         "dropOnTopElevation",
         "elevation",
         "elevationEnd",
-        "elevationIndex",
         "elevationStart",
         "endAngle",
         "endMarkSize",
@@ -60,8 +59,6 @@ NUMERIC_ATTRS = frozenset(
         "latitude",
         "leftSideShininess",
         "longitude",
-        "modelFlags",
-        "modelSize",
         "nameAngle",
         "nameXOffset",
         "nameYOffset",
@@ -73,9 +70,6 @@ NUMERIC_ATTRS = frozenset(
         "paperRightMargin",
         "paperTopMargin",
         "paperWidth",
-        "photoHeight",
-        "photoQuality",
-        "photoWidth",
         "pitch",
         "planScale",
         "power",
@@ -93,10 +87,7 @@ NUMERIC_ATTRS = frozenset(
         "subpartSizeUnderLight",
         "thickness",
         "valueAddedTaxPercentage",
-        "videoFrameRate",
-        "videoQuality",
         "videoSpeed",
-        "videoWidth",
         "wallDistance",
         "wallHeight",
         "wallLeft",
@@ -128,8 +119,39 @@ NUMERIC_ATTRS = frozenset(
         "zUpper",
     ]
 )
+INT_ATTRS = frozenset(
+    [
+        "creationDate",
+        "elevationIndex",
+        "modelFlags",
+        "modelSize",
+        "photoHeight",
+        "photoQuality",
+        "photoWidth",
+        "videoFrameRate",
+        "videoQuality",
+        "videoWidth",
+    ]
+)
+COLOR_ATTRS = frozenset(
+    [
+        "ceilingColor",
+        "ceillingLightColor",
+        "color",
+        "floorColor",
+        "groundColor",
+        "leftSideColor",
+        "lightColor",
+        "outlineColor",
+        "rightSideColor",
+        "skyColor",
+        "topColor",
+    ]
+)
 NON_FINITE = frozenset({"NaN", "-NaN", "Infinity", "-Infinity"})
 NUMBER_RE = re.compile(r"^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$")
+INT_RE = re.compile(r"[+-]?[0-9]+")  # fullmatch: Integer/Long.parseLong do not trim
+COLOR_RE = re.compile(r"[0-9A-Fa-f]{1,8}")  # fullmatch: Long.parseLong(v, 16), %08X ARGB
 SRC_ZIP = ROOT / "work" / "sh3d-src" / f"SweetHome3D-{SH3D_VERSION_PINNED}-src.zip"
 SRC_ZIP_URL = (
     "https://sourceforge.net/projects/sweethome3d/files/SweetHome3D-source/"
@@ -179,13 +201,13 @@ def check_name(name: str) -> None:
 
 
 def check_entry_name(entry: str) -> None:
-    path = PurePosixPath(entry)
-    if path.is_absolute() or "\\" in entry or ".." in path.parts or entry.rstrip("/") == META:
+    path = PurePosixPath(entry)  # a leading "." refuses "..", META and .git/.GIT planting alike
+    if path.is_absolute() or "\\" in entry or any(part.startswith(".") for part in path.parts):
         raise Sh3dError(f"refusing unsafe zip entry name {entry!r}")
 
 
-def require_clean(tree: Path, src: Path) -> None:
-    target = (tree if tree.exists() else src).resolve()
+def require_clean(src: Path, name: str) -> None:
+    target = src.resolve()
     if not target.is_dir():
         raise Sh3dError(f"source root not found: {target}")
     inside = subprocess.run(
@@ -194,18 +216,30 @@ def require_clean(tree: Path, src: Path) -> None:
     if inside.returncode != 0 or inside.stdout.strip() != "true":
         raise Sh3dError(f"{target} is not inside a git work tree — sh3d_src must be git-tracked")
     status = subprocess.run(
-        ["git", "-C", str(target), "status", "--porcelain", "--", "."], capture_output=True, text=True, check=True
+        ["git", "-C", str(target), "status", "--porcelain", "--", name], capture_output=True, text=True, check=True
     )
     if status.stdout.strip():
-        raise Sh3dError(f"{target} has uncommitted changes — commit or discard them first")
+        raise Sh3dError(f"{target / name} has uncommitted changes — commit or discard them first")
 
 
-def pull(roots: Roots, name: str) -> None:
+def tree_shas(tree: Path) -> dict[str, str]:
+    return {
+        p.relative_to(tree).as_posix(): sha256_file(p)
+        for p in sorted(tree.rglob("*"))
+        if p.is_file() and p.name != META
+    }
+
+
+def pull(roots: Roots, name: str, force: bool = False) -> None:
     sh3d = roots.sh3d(name)
     if not sh3d.is_file():
         raise Sh3dError(f"{sh3d} not found")
     tree = roots.tree(name)
-    require_clean(tree, roots.src)
+    require_clean(roots.src, name)
+    if not force and (tree / META).is_file():
+        recorded = json.loads((tree / META).read_text(encoding="utf-8")).get("files")  # absent in older meta
+        if recorded is not None and recorded != tree_shas(tree):
+            raise Sh3dError(f"{name} has edits not yet pushed — push first, or pull --force to discard them")
     source_sha = sha256_file(sh3d)
     with zipfile.ZipFile(sh3d) as zf:
         infos = zf.infolist()
@@ -224,6 +258,7 @@ def pull(roots: Roots, name: str) -> None:
         "source_sha256": source_sha,
         "sh3d_version_pinned": SH3D_VERSION_PINNED,
         "entries": [{"name": i.filename, "compress_type": i.compress_type} for i in infos],
+        "files": tree_shas(tree),
     }
     (tree / META).write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
     print(f"pull: ok {name} — {len(infos)} entries → {tree}")
@@ -272,6 +307,10 @@ def validate_errors(tree: Path, dtd: etree.DTD) -> list[str]:
                 errors.append(f"{where} non-finite number")
             elif attr in NUMERIC_ATTRS and not NUMBER_RE.match(value):
                 errors.append(f"{where} not a number")
+            elif attr in INT_ATTRS and not INT_RE.fullmatch(value):
+                errors.append(f"{where} not an integer")
+            elif attr in COLOR_ATTRS and not COLOR_RE.fullmatch(value):
+                errors.append(f"{where} not a hex colour")
             if is_resource_ref(el, attr) and resource_missing(tree, value):
                 errors.append(f"{where} missing resource under {tree}")
     return errors
@@ -381,6 +420,7 @@ def push(roots: Roots, name: str) -> None:
     finally:
         tmp.unlink(missing_ok=True)
     meta["source_sha256"] = sha256_file(sh3d)
+    meta["files"] = tree_shas(tree)
     meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
     print(f"push: ok {name} — commit sh3d_src/{name}/{META}; reopen in SH3D")
 
@@ -566,6 +606,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="cmd", required=True)
     for cmd in COMMANDS:
         sub.add_parser(cmd).add_argument("name")
+    sub.choices["pull"].add_argument("--force", action="store_true", help="discard edits not yet pushed")
     sub.add_parser("dtd").add_argument("--src-zip", type=Path, default=SRC_ZIP)
     return parser
 
@@ -578,7 +619,10 @@ def main(argv: list[str] | None = None) -> int:
             build_dtd(args.src_zip, roots.dtd)
         else:
             check_name(args.name)
-            COMMANDS[args.cmd](roots, args.name)
+            if args.cmd == "pull":
+                pull(roots, args.name, force=args.force)
+            else:
+                COMMANDS[args.cmd](roots, args.name)
     except Sh3dError as e:
         print(f"sh3d: {e}", file=sys.stderr)
         return 1

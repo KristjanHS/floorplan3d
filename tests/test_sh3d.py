@@ -45,6 +45,11 @@ def git(cwd: Path, *args: str) -> None:
     subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "-C", str(cwd), *args], check=True)
 
 
+def commit(cwd: Path) -> None:
+    git(cwd, "add", "-A")
+    git(cwd, "commit", "-q", "--allow-empty", "-m", "c")
+
+
 @pytest.fixture
 def roots(tmp_path: Path) -> sh3d.Roots:
     r = sh3d.Roots(
@@ -96,6 +101,22 @@ def test_pull_refuses_dirty_src(roots: sh3d.Roots, capsys: pytest.CaptureFixture
     assert run(roots, "pull", "x") == 0
 
 
+def test_pull_ignores_dirt_outside_name(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    repo = tmp_path / "repo"
+    r = sh3d.Roots(
+        homes=tmp_path / "homes", src=repo / "src", backups=tmp_path / "b", work=tmp_path / "w", dtd=tmp_path
+    )
+    (r.src / "y").mkdir(parents=True)
+    git(repo, "init", "-q")
+    commit(repo)
+    (r.src / "y" / "Home.xml").write_bytes(b"dirty sibling")
+    (repo / "outside.txt").write_text("untracked outside src")
+    make_sh3d(r.sh3d("newname"))
+    assert run(r, "pull", "newname") == 0
+    assert run(r, "pull", "newname") == 1  # dirt inside <name> (the untracked pull) still refuses
+    assert "newname has uncommitted" in capsys.readouterr().err
+
+
 def test_pull_refuses_non_git_src(roots: sh3d.Roots, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     plain = tmp_path / "plain"
     plain.mkdir()
@@ -115,8 +136,9 @@ def test_pull_refuses_bad_name(roots: sh3d.Roots, capsys: pytest.CaptureFixture[
     assert "bad name" in capsys.readouterr().err
 
 
-def test_pull_refuses_unsafe_entry(roots: sh3d.Roots, capsys: pytest.CaptureFixture[str]) -> None:
-    make_sh3d(roots.sh3d("x"), [("Home.xml", HOME_XML, 8), ("../evil", b"x", 0)])
+@pytest.mark.parametrize("entry", ["../evil", ".git/config", "x/.GIT/HEAD"])
+def test_pull_refuses_unsafe_entry(roots: sh3d.Roots, capsys: pytest.CaptureFixture[str], entry: str) -> None:
+    make_sh3d(roots.sh3d("x"), [("Home.xml", HOME_XML, 8), (entry, b"x", 0)])
     assert run(roots, "pull", "x") == 1
     assert "unsafe zip entry" in capsys.readouterr().err
     assert not roots.tree("x").exists()
@@ -126,7 +148,7 @@ SYNTH_DTD = """<!ELEMENT home (level*, (pieceOfFurniture | doorOrWindow)*, wall*
 <!ATTLIST home version CDATA #IMPLIED wallHeight CDATA #IMPLIED>
 <!ELEMENT level EMPTY>
 <!ATTLIST level id ID #REQUIRED name CDATA #REQUIRED elevation CDATA #REQUIRED floorThickness CDATA #REQUIRED
-  height CDATA #REQUIRED>
+  height CDATA #REQUIRED elevationIndex CDATA #IMPLIED>
 <!ENTITY % piece "id ID #REQUIRED level IDREF #IMPLIED name CDATA #REQUIRED model CDATA #IMPLIED
   icon CDATA #IMPLIED x CDATA #REQUIRED y CDATA #REQUIRED angle CDATA #IMPLIED width CDATA #REQUIRED
   depth CDATA #REQUIRED height CDATA #REQUIRED">
@@ -136,7 +158,8 @@ SYNTH_DTD = """<!ELEMENT home (level*, (pieceOfFurniture | doorOrWindow)*, wall*
 <!ATTLIST doorOrWindow %piece;>
 <!ELEMENT wall EMPTY>
 <!ATTLIST wall id ID #REQUIRED level IDREF #IMPLIED xStart CDATA #REQUIRED yStart CDATA #REQUIRED
-  xEnd CDATA #REQUIRED yEnd CDATA #REQUIRED thickness CDATA #REQUIRED height CDATA #IMPLIED>
+  xEnd CDATA #REQUIRED yEnd CDATA #REQUIRED thickness CDATA #REQUIRED height CDATA #IMPLIED
+  leftSideColor CDATA #IMPLIED rightSideColor CDATA #IMPLIED>
 <!ELEMENT room (point+)>
 <!ATTLIST room id ID #REQUIRED level IDREF #IMPLIED name CDATA #IMPLIED>
 <!ELEMENT point EMPTY>
@@ -180,13 +203,20 @@ def test_validate_missing_resource(roots: sh3d.Roots, pulled: Path, capsys: pyte
 def test_validate_collects_number_errors(roots: sh3d.Roots, pulled: Path, capsys: pytest.CaptureFixture[str]) -> None:
     edit_xml(pulled, b"x='100'", b"x='NaN'")
     edit_xml(pulled, b"width='90'", b"width=''")
+    edit_xml(pulled, b"width='200'", b"width='1,5'")
     edit_xml(pulled, b"name='Living'", b"name='-Infinity'")  # ruled: any attribute, not only NUMERIC_ATTRS
+    edit_xml(pulled, b"<level id='level0'", b"<level elevationIndex='1.5' id='level0'")
+    edit_xml(pulled, b"thickness='10'", b"thickness='10' leftSideColor='#FF0000' rightSideColor='FF808080'")
     assert run(roots, "validate", "x") == 1
     err = capsys.readouterr().err
-    assert "3 error(s)" in err
+    assert "6 error(s)" in err
     assert "x='NaN'> non-finite" in err
     assert "width=''> not a number" in err
+    assert "width='1,5'> not a number" in err
     assert "name='-Infinity'> non-finite" in err
+    assert "elevationIndex='1.5'> not an integer" in err
+    assert "leftSideColor='#FF0000'> not a hex colour" in err
+    assert "rightSideColor" not in err
 
 
 def test_validate_malformed_xml(roots: sh3d.Roots, pulled: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -257,8 +287,12 @@ def test_numeric_attrs_match_source() -> None:
         pytest.skip(f"{sh3d.SRC_ZIP} absent")
     with zipfile.ZipFile(sh3d.SRC_ZIP) as zf:
         java = zf.read(sh3d.DTD_JAVA).decode("utf-8")
-    pattern = r'parse(?:Optional)?(?:Float|Integer|Long|Decimal)\(\w+, *"(\w+)"'
-    assert set(re.findall(pattern, java)) == sh3d.NUMERIC_ATTRS
+    for kinds, attrs in (
+        ("Float|Decimal", sh3d.NUMERIC_ATTRS),
+        ("Integer|Long", sh3d.INT_ATTRS),
+        ("Color", sh3d.COLOR_ATTRS),
+    ):
+        assert set(re.findall(rf'parse(?:Optional)?(?:{kinds})\(\w+, *"(\w+)"', java)) == attrs, kinds
 
 
 def kept_entries() -> list[tuple[str, bytes, int]]:
@@ -280,6 +314,34 @@ def test_push_round_trip(roots: sh3d.Roots, pulled: Path, capsys: pytest.Capture
     assert meta["source_sha256"] == sh3d.sha256_file(roots.sh3d("x"))
     backup.unlink()  # same-second second push would collide on the backup name
     assert run(roots, "push", "x") == 0  # no pull in between: meta sha tracks the pushed file
+
+
+def test_pull_refuses_unpushed_edits(roots: sh3d.Roots, pulled: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    commit(roots.src)
+    edit_xml(pulled, b"x='100'", b"x='101'")
+    commit(roots.src)
+    assert run(roots, "pull", "x") == 1
+    assert "x has edits not yet pushed" in capsys.readouterr().err
+    assert b"x='101'" in (pulled / "Home.xml").read_bytes()
+    meta = json.loads((pulled / sh3d.META).read_text())
+    del meta["files"]  # older meta: no record, no refusal
+    (pulled / sh3d.META).write_text(json.dumps(meta))
+    commit(roots.src)
+    assert run(roots, "pull", "x") == 0
+    commit(roots.src)
+    edit_xml(pulled, b"x='100'", b"x='101'")
+    commit(roots.src)
+    assert run(roots, "pull", "x", "--force") == 0
+    assert (pulled / "Home.xml").read_bytes() == HOME_XML
+
+
+def test_pull_after_push_keeps_edits(roots: sh3d.Roots, pulled: Path) -> None:
+    commit(roots.src)
+    edit_xml(pulled, b"x='100'", b"x='101'")
+    assert run(roots, "push", "x") == 0
+    commit(roots.src)
+    assert run(roots, "pull", "x") == 0
+    assert b"x='101'" in (pulled / "Home.xml").read_bytes()
 
 
 def test_push_refuses_gui_edit_since_pull(roots: sh3d.Roots, pulled: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -365,6 +427,11 @@ def make_n(*args: str) -> subprocess.CompletedProcess[str]:
 def test_make_sh3d_target_requires_name_on_command_line() -> None:
     r = make_n("inspect")
     assert r.returncode != 0 and "NAME" in r.stderr
+
+
+def test_make_sh3d_target_refuses_shell_metachars_in_name() -> None:
+    r = make_n("inspect", "NAME=x;id")
+    assert r.returncode != 0 and "NAME='x;id'" in r.stderr
 
 
 def test_make_sh3d_target_passes_name() -> None:
