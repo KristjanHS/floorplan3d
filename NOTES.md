@@ -4,6 +4,18 @@
 - Upstream `vendor/FloorplanToBlender3d` @ `2da4c95` (vetted: `docs/security-review-FloorplanToBlender3d.md`).
 - Blender 5.2.4 LTS, `~/.local/opt/blender-5.2.4-linux-x64/`, tarball sha256 `2fd14c50987426897ba60237ee996edf2b4151f4b1a72a460ca20be58c1d2d86`.
 - Upstream run-path deps at current versions via `uv add` (never its `requirements.txt` pins); exact versions in `uv.lock`.
+- SweetHome3D 7.6.1 (Windows, `C:\Program Files (x86)\Sweet Home 3D\lib\SweetHome3D.jar`, 32-bit Java 1.8.0_202): no `.dtd` in any jar.
+- SweetHome3D 7.6.1 source `work/sh3d-src/SweetHome3D-7.6.1-src.zip` sha256 `b82de76095b2b07fcab59637dc16bd8cd1c92e6208ed18b5e37a5d2a304beee6`; DTD = `io/HomeXMLHandler.java:80-463` javadoc.
+- Fetch: `curl -sSL -o work/sh3d-src/SweetHome3D-7.6.1-src.zip https://sourceforge.net/projects/sweethome3d/files/SweetHome3D-source/SweetHome3D-7.6.1-src/SweetHome3D-7.6.1-src.zip/download`
+
+## SweetHome3D format (7.6.1 source, paths under `com/eteks/sweethome3d/`)
+- (a) `Home.xml` wins over `Home` in any entry order: `io/DefaultHomeInputStream.java:285-289`, app passes the XML handler (`SweetHome3D.java:200`, `io/HomeFileRecorder.java:330-331`) ⇒ `DROP_HOME_ENTRY = False`.
+- (b) `Home` absent → `Home.xml` read alone; both absent → `IOException("Missing entry …")`: `io/DefaultHomeInputStream.java:293-294`.
+- (c) No `ContentDigests` → digest check skipped (`contentDigests == null`): `io/HomeContentContext.java:112,154`.
+- (d) Lengths cm (`model/LengthUnit.java:122,187` CENTIMETER identity), angles radians (`model/HomePieceOfFurniture.java:1362`), colours `%08X` ARGB (`io/XMLWriter.java:198`).
+- (e) `CONTENT_ATTRS` = `model icon planIcon image`, + `property value` when `type="CONTENT"`: `io/HomeXMLHandler.java:798,820,1235-1237,1800`; URL first, else entry (`:1929`).
+- (f) `NUMERIC_ATTRS` = every name in `parse(Optional)?(Float|Integer|Long|Decimal)(attributes…, "<name>")` calls, `io/HomeXMLHandler.java`; `Float.parseFloat` accepts `NaN` (`:1916`).
+- DTD as shipped fails lxml: patch `renderer CADATA`→`CDATA`, `lightSourceMaterial name #REQUIRED`→`name CDATA #REQUIRED`, `endMarkSize CDATA "10";`→`"10"`.
 
 ## Upstream quirks
 - `make upstream-test` skips `Testing/visuals/` (`cv2.imshow` aborts without a display) and pre-creates `Configs/` (`test_config` reads `../Configs`).

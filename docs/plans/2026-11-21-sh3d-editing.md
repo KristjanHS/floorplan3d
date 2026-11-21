@@ -5,17 +5,17 @@ Refactor-first: skipped — `scripts/sh3d.py` is a new standalone module; no exi
 
 ## Constants (`scripts/sh3d.py`)
 - `HASH = "sha256"` (`hashlib.sha256`, 1 MiB chunks); `NAME_RE = r"^[A-Za-z0-9_-]+$"` (refuse other names).
-- `SH3D_VERSION_PINNED = "<ver from 1.1>"`; `DROP_HOME_ENTRY: bool` = Stage 1.2 finding; `DROPPED = {"ContentDigests"}` (+`"Home"` if drop).
-- `CONTENT_ATTRS` (attrs holding entry names, e.g. `model icon planIcon image`) and `NUMERIC_ATTRS` — both from Stage 1.2 source read.
+- `SH3D_VERSION_PINNED = "7.6.1"`; `DROP_HOME_ENTRY = False` (NOTES (a)); `DROPPED = {"ContentDigests"}`.
+- `CONTENT_ATTRS`, `NUMERIC_ATTRS` per NOTES.md `## SweetHome3D format` (e), (f).
 - Backup path: `backups/<name>-<YYYYmmdd-HHMMSS>.sh3d` (`time.strftime("%Y%m%d-%H%M%S")`); refuse if it exists.
 - Preview path: `work/sh3d/<name>/preview.png` — deviates from spec (`sh3d_src/<name>/preview.png`): `work/` is already gitignored.
-- DTD path: `work/sh3d/SweetHome3D.dtd`, extracted by Make (Stage 4.1); never vendored.
+- DTD path: `work/sh3d/SweetHome3D.dtd`, built by `sh3d.py dtd` from the source zip (Stage 2.2); never vendored.
 - `.sh3d_meta.json` (2-space indent, trailing newline):
   `{"source_sha256": "<hex>", "sh3d_version_pinned": "<ver>", "entries": [{"name": "Home.xml", "compress_type": 8}, …]}`
 - `entries` = every zip entry in original order (dropped ones included, skipped on push); `compress_type` = `ZipInfo.compress_type`.
 
 ## CLI shape
-- `uv run python scripts/sh3d.py [--homes D] [--src D] [--backups D] [--work D] [--dtd F] {pull,push,validate,inspect,preview} <name>`
+- `uv run python scripts/sh3d.py [--homes D] [--src D] [--backups D] [--work D] [--dtd F] {pull,push,validate,inspect,preview} <name>` | `dtd [--src-zip F]`
 - Root defaults: repo-relative `homes/ sh3d_src/ backups/ work/`, `--dtd` default `work/sh3d/SweetHome3D.dtd`; tests always pass all roots under `tmp_path`.
 - `main(argv: list[str] | None = None) -> int`; `Sh3dError` → `sh3d: <msg>` on stderr, exit 1. Tests call `sh3d.main([...])`.
 
@@ -55,7 +55,9 @@ Refactor-first: skipped — `scripts/sh3d.py` is a new standalone module; no exi
 
 ### Stage 2.2 validate
 - Focus: `scripts/sh3d.py`, `tests/test_sh3d.py`.
-- Missing `--dtd` file → `Sh3dError("DTD not found: <path> — run make validate (extracts it from SH3D_JAR)")`.
+- Missing `--dtd` file → `Sh3dError("DTD not found: <path> — run make sh3d-dtd")`.
+- `dtd`: read `SweetHome3D-7.6.1-src/src/com/eteks/sweethome3d/io/HomeXMLHandler.java` from `--src-zip` (default `work/sh3d-src/SweetHome3D-7.6.1-src.zip`); take the `<pre>`…`</pre>` javadoc,
+  strip ` * `, `&lt;`→`<`, apply the 3 NOTES patches; must load via `etree.DTD` else error; write `--dtd`. Missing zip → error naming the curl in NOTES.
 - Parse Home.xml with `etree.XMLParser(resolve_entities=False, no_network=True)`; well-formedness errors reported with line.
 - `etree.DTD(dtd).validate(root)`; report `dtd.error_log` lines.
 - Refs: every `CONTENT_ATTRS` value without `://` and not `jar:` must exist under `sh3d_src/<name>/`.
@@ -102,15 +104,14 @@ Refactor-first: skipped — `scripts/sh3d.py` is a new standalone module; no exi
 
 ### Stage 4.1 Makefile targets
 - Focus: `Makefile`, `tests/test_sh3d.py`.
-- `SH3D_JAR ?= <jar path from 1.2>`, `SH3D_DTD_ENTRY ?= <entry from 1.2>`, `SH3D_DTD := work/sh3d/SweetHome3D.dtd`.
+- `SH3D_SRC_ZIP ?= work/sh3d-src/SweetHome3D-7.6.1-src.zip`, `SH3D_DTD := work/sh3d/SweetHome3D.dtd`.
 - Parse-time guard: `ifneq ($(filter pull push validate inspect preview,$(MAKECMDGOALS)),)` + `ifndef NAME` → `$(error NAME= required)`.
-- `sh3d-dtd` (phony, always re-extracts): `test -f "$(SH3D_JAR)" || { echo "SH3D_JAR not found: $(SH3D_JAR)" >&2; exit 1; }`
-  then `mkdir -p work/sh3d && unzip -p "$(SH3D_JAR)" $(SH3D_DTD_ENTRY) > $(SH3D_DTD)`; empty output → delete + fail.
+- `sh3d-dtd` (phony, always rebuilds): `uv run python scripts/sh3d.py --dtd $(SH3D_DTD) dtd --src-zip $(SH3D_SRC_ZIP)`.
 - `validate push: sh3d-dtd`; each target runs `uv run python scripts/sh3d.py <cmd> $(NAME)`; `push` then prints
   `wslpath -w "$$(realpath homes)/$(NAME).sh3d"`.
 - Add the five + `sh3d-dtd` to `.PHONY` and `help`.
 - Tests: `make -n inspect` → non-zero, stderr has `NAME`; `make -n inspect NAME=x` prints `scripts/sh3d.py inspect x`.
-- Falsifier: `make validate NAME=x SH3D_JAR=/nonexistent; echo exit=$?` → `exit=2`, `SH3D_JAR not found`.
+- Falsifier: `make validate NAME=x SH3D_SRC_ZIP=/nonexistent; echo exit=$?` → `exit=2`, stderr names the zip.
 - Verify: Stage 2.1 command + the falsifier. Done: commit `feat(make): pull/push/validate/inspect/preview NAME= targets`.
 
 ### Stage 4.2 links + README
