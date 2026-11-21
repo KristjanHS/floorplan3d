@@ -17,3 +17,7 @@
   only walls with a vertex inside the LARGEST gray<230 contour survive (fixture: that contour spans 69 % × 47 %).
 - `sandbox.bwrap_cmd` mounts a tmpfs on `/tmp`, so `convert.py` cannot read a PNG under `/tmp` (e2e test works under `work/`).
 - `export` never deletes: stale `*_UNSCALED*` files stay in `output/<floor>/` after calibrating.
+- The preprocess wall mask (`wall_min_px`) assumes walls are thick strokes. On sheets that draw walls as thin double
+  lines + hatching it keeps only solid wall runs, the sheet border and the title block; the outline frame then wraps
+  the page, and `wall check OK` is vacuous (model and drawn extents share that frame). An `outline_cover` warning far
+  below 0.97 is the tell — use a hand override `input/<floor>_walls.png` there.
