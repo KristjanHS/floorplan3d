@@ -15,4 +15,4 @@ itself lives in `FLOORPLAN_TO_3D_SETUP.md`.
 ## 4. Blender's bundled Python version may differ from 3.12
 
 - Refuted: Blender 5.2.4 LTS bundles Python 3.13.13, newer than 3.12; `test_export.py` and
-  `test_measure.py` already run both bpy scripts inside real Blender.
+  `test_measure.py` run both bpy scripts inside real Blender (skipped when `blender` is not on PATH).
