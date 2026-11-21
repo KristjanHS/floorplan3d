@@ -42,18 +42,36 @@ def pytest_runtest_logstart(nodeid: str) -> None:
     _started[nodeid] = time.monotonic()
 
 
-def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+# pytest's own summary categories, in its order; a test's mark is its worst category.
+_ORDER = ("failed", "passed", "skipped", "xfailed", "xpassed", "error")
+_MARK = {"failed": "F", "error": "E", "xpassed": "X", "xfailed": "x", "skipped": "s", "passed": "."}
+_WORST = ("failed", "error", "xpassed", "xfailed", "skipped", "passed")
+
+
+def _category(report: pytest.TestReport) -> str | None:
+    """Counted the way pytest's terminal summary counts: per report, not per test."""
+    xfail = hasattr(report, "wasxfail")
     if report.failed:
-        _outcomes[report.nodeid] = "failed"
-    elif report.skipped:
-        _outcomes.setdefault(report.nodeid, "skipped")
-    elif report.when == "call":
-        _outcomes.setdefault(report.nodeid, "passed")
+        return "failed" if report.when == "call" else "error"
+    if report.skipped:
+        return "xfailed" if xfail else "skipped"
+    if report.when == "call":
+        return "xpassed" if xfail else "passed"
+    return None
+
+
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    category = _category(report)
+    if category is None:
+        return
+    _counts[category] = _counts.get(category, 0) + 1
+    seen = _outcomes.get(report.nodeid)
+    if seen is None or _WORST.index(category) < _WORST.index(seen):
+        _outcomes[report.nodeid] = category
 
 
 def pytest_runtest_logfinish(nodeid: str) -> None:
-    outcome = _outcomes.get(nodeid, "passed")
-    _counts[outcome] = _counts.get(outcome, 0) + 1
+    outcome = _outcomes.pop(nodeid, "passed")
     took = time.monotonic() - _started.pop(nodeid, time.monotonic())
     if took >= SLOW_S:
         mark = "" if outcome == "passed" else f" {outcome.upper()}"
@@ -61,7 +79,7 @@ def pytest_runtest_logfinish(nodeid: str) -> None:
         _write(f"{lead}    {took:4.1f}s {nodeid.rsplit('::', 1)[-1]}{mark}\n", ends_line=True)
     else:
         indent = "" if _midline else "  "
-        _write(indent + {"passed": ".", "failed": "F", "skipped": "s"}[outcome], ends_line=False)
+        _write(indent + _MARK[outcome], ends_line=False)
 
 
 def pytest_unconfigure(config: pytest.Config) -> None:
@@ -74,7 +92,7 @@ def pytest_unconfigure(config: pytest.Config) -> None:
     _tty = None
     state = os.environ.get("GATE_PROGRESS_STATE")
     if state and _wrote:
-        order = ("failed", "passed", "skipped")
-        summary = ", ".join(f"{_counts[k]} {k}" for k in order if _counts.get(k))
+        label = {"error": "errors"}
+        summary = ", ".join(f"{n} {k if n == 1 else label.get(k, k)}" for k in _ORDER if (n := _counts.get(k)))
         with open(state, "w") as f:
             f.write(summary)
