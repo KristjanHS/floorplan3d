@@ -291,7 +291,14 @@ def extract_dtd(java: str) -> str:
     text = "\n".join(re.sub(r"^ \* ?", "", line) for line in m.group(1).split("\n")).replace("&lt;", "<") + "\n"
     for old, new in DTD_PATCHES:
         text = text.replace(old, new)
-    return text
+    return re.sub(r"\b(\w+)\?(?:\s*,\s*\1\?)+", deterministic_repeat, text)
+
+
+def deterministic_repeat(m: re.Match[str]) -> str:
+    tag, model = m.group(1), f"{m.group(1)}?"
+    for _ in range(m.group(0).count("?") - 1):
+        model = f"({tag}, {model})?"
+    return model
 
 
 def build_dtd(src_zip: Path, out: Path) -> None:
@@ -494,7 +501,8 @@ def preview(roots: Roots, name: str) -> None:
     from matplotlib.patches import Polygon
 
     root = read_home(roots.tree(name))
-    level_ids: list[str | None] = [e.get("id") for e in root.iter("level")] or [None]
+    level_names = {e.get("id"): e.get("name", "-") for e in root.iter("level")}
+    level_ids: list[str | None] = list(level_names) or [None]
     fig, axes = plt.subplots(1, len(level_ids), figsize=(8 * len(level_ids), 8), squeeze=False)
     curved: list[str] = []
     for ax, level in zip(axes[0], level_ids, strict=True):
@@ -525,7 +533,7 @@ def preview(roots: Roots, name: str) -> None:
                     va="center",
                     fontsize=6,
                 )
-        ax.set_title(f"level {level}" if level else name)
+        ax.set_title(level_names[level] if level else name)
         ax.set_xlabel("cm")
         ax.set_ylabel("cm")
         ax.set_aspect("equal")

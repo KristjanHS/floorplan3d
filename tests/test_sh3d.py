@@ -5,6 +5,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+from lxml import etree
 
 import sh3d
 
@@ -207,9 +208,11 @@ FAKE_JAVA = """package com.eteks.sweethome3d.io;
  *       renderer CADATA #IMPLIED
  *       endMarkSize CDATA "10";>
  *
- * &lt;!ELEMENT lightSourceMaterial EMPTY>
+ * &lt;!ELEMENT lightSourceMaterial (texture?, texture?, texture?)>
  * &lt;!ATTLIST lightSourceMaterial
  *       name #REQUIRED>
+ *
+ * &lt;!ELEMENT texture EMPTY>
  * </pre>
  * with <code>home</code> as root element.
  */
@@ -228,6 +231,10 @@ def test_dtd_extracts_and_patches(roots: sh3d.Roots, tmp_path: Path) -> None:
     dtd = roots.dtd.read_text()
     assert dtd.startswith("<!ELEMENT home (lightSourceMaterial*)>\n<!ATTLIST home\n      renderer CDATA")
     assert "name CDATA #REQUIRED>" in dtd and '"10";' not in dtd
+    loaded = etree.DTD(str(roots.dtd))
+    for n, ok in ((0, True), (1, True), (3, True), (4, False)):  # `texture?` ×3 rewritten deterministic
+        doc = f"<home><lightSourceMaterial name='a'>{'<texture/>' * n}</lightSourceMaterial></home>"
+        assert loaded.validate(etree.fromstring(doc)) is ok, (n, loaded.error_log)
 
 
 def test_dtd_missing_zip_names_curl(roots: sh3d.Roots, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
