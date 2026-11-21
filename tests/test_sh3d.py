@@ -334,3 +334,13 @@ def test_inspect_tables(roots: sh3d.Roots, pulled: Path, capsys: pytest.CaptureF
     assert "group/g1/c1" in rows
     assert "d1" in rows and "furniture (2)" in lines and "doors/windows (1)" in lines
     assert lines[-1] == "unhandled: label×2"
+
+
+def test_preview_writes_png_under_work(roots: sh3d.Roots, pulled: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    edit_xml(pulled, b"thickness='10' height='250'", b"thickness='10' height='250' arcExtent='1.5'")
+    before = {p: p.read_bytes() for p in roots.src.rglob("*") if p.is_file() and ".git" not in p.parts}
+    assert run(roots, "preview", "x") == 0
+    png = roots.work / "sh3d" / "x" / "preview.png"
+    assert png.read_bytes().startswith(b"\x89PNG") and png.stat().st_size > 1024
+    assert {p: p.read_bytes() for p in roots.src.rglob("*") if p.is_file() and ".git" not in p.parts} == before
+    assert "unhandled: curved walls drawn straight: w1" in capsys.readouterr().out

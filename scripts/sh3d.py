@@ -471,11 +471,80 @@ def inspect(roots: Roots, name: str) -> None:
     print("\n".join(inspect_lines(read_home(roots.tree(name)))))
 
 
+def wall_corners(wall: etree._Element) -> list[tuple[float, float]]:
+    x0, y0, x1, y1 = (float(wall.get(a, "0")) for a in ("xStart", "yStart", "xEnd", "yEnd"))
+    length = math.hypot(x1 - x0, y1 - y0) or 1.0
+    half = float(wall.get("thickness", "0")) / 2
+    nx, ny = -(y1 - y0) / length * half, (x1 - x0) / length * half
+    return [(x0 + nx, y0 + ny), (x1 + nx, y1 + ny), (x1 - nx, y1 - ny), (x0 - nx, y0 - ny)]
+
+
+def piece_corners(piece: etree._Element) -> list[tuple[float, float]]:
+    x, y = float(piece.get("x", "0")), float(piece.get("y", "0"))
+    hw, hd = float(piece.get("width", "0")) / 2, float(piece.get("depth", "0")) / 2
+    c, s = math.cos(float(piece.get("angle", "0"))), math.sin(float(piece.get("angle", "0")))
+    return [(x + dx * c - dy * s, y + dx * s + dy * c) for dx, dy in ((-hw, -hd), (hw, -hd), (hw, hd), (-hw, hd))]
+
+
+def preview(roots: Roots, name: str) -> None:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    from matplotlib import pyplot as plt
+    from matplotlib.patches import Polygon
+
+    root = read_home(roots.tree(name))
+    level_ids: list[str | None] = [e.get("id") for e in root.iter("level")] or [None]
+    fig, axes = plt.subplots(1, len(level_ids), figsize=(8 * len(level_ids), 8), squeeze=False)
+    curved: list[str] = []
+    for ax, level in zip(axes[0], level_ids, strict=True):
+
+        def on_level(el: etree._Element, level: str | None = level) -> bool:
+            return level is None or el.get("level") == level
+
+        for room in filter(on_level, root.iter("room")):
+            points = room_points(room)
+            if points:
+                ax.add_patch(Polygon(points, closed=True, facecolor="#cfe3f5", edgecolor="#7aa6cc", lw=0.5))
+                cx, cy = sum(p[0] for p in points) / len(points), sum(p[1] for p in points) / len(points)
+                ax.text(cx, cy, room.get("name", ""), ha="center", va="center", fontsize=8)
+        for wall in filter(on_level, root.iter("wall")):
+            if wall.get("arcExtent") is not None:
+                curved.append(wall.get("id", "-"))
+            ax.add_patch(Polygon(wall_corners(wall), closed=True, facecolor="#444444", edgecolor="none"))
+        for _, piece in flatten_pieces(root):
+            if on_level(piece):
+                door = piece.tag == "doorOrWindow"
+                style = {"facecolor": "#f2b880" if door else "#c9c9c9", "edgecolor": "#8a5a2b" if door else "#666666"}
+                ax.add_patch(Polygon(piece_corners(piece), closed=True, lw=0.5, **style))
+                ax.text(
+                    float(piece.get("x", "0")),
+                    float(piece.get("y", "0")),
+                    piece.get("name", ""),
+                    ha="center",
+                    va="center",
+                    fontsize=6,
+                )
+        ax.set_title(f"level {level}" if level else name)
+        ax.set_xlabel("cm")
+        ax.set_ylabel("cm")
+        ax.set_aspect("equal")
+        ax.autoscale_view()
+        ax.invert_yaxis()  # SH3D y grows down
+    out = roots.work / "sh3d" / name / "preview.png"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=120, bbox_inches="tight")
+    plt.close(fig)
+    print(f"preview: {out}")
+    print("unhandled: " + (f"curved walls drawn straight: {' '.join(curved)}" if curved else "none"))
+
+
 COMMANDS: dict[str, Callable[[Roots, str], None]] = {
     "pull": pull,
     "validate": validate,
     "push": push,
     "inspect": inspect,
+    "preview": preview,
 }
 
 
