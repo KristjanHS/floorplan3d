@@ -1,0 +1,7 @@
+# Copy to plans.yaml (gitignored). Calibration points: read them off work/<name>_grid.png.
+floors:
+  - name: ground
+    pdf: input/ground.pdf
+    page: 1
+    calibration: { p1: [120, 340], p2: [540, 340], metres: 4.20 }
+    wall_height_m: 2.6
