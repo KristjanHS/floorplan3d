@@ -27,7 +27,7 @@ Recommend: NEW `scripts/walls.py` (pure numpy/cv2 geometry: segments, pairing, m
 | Name | Value | Validated by |
 |---|---|---|
 | `GAP_CM` | 8–40 cm (→ px via level scale) | `test_pair_rejects_gap_outside_range` |
-| `MIN_SEG_CM` | 40 cm (drops hatch strokes) | `test_segments_drop_hatching` |
+| `MIN_SEG_CM` | 50 cm (drops hatch strokes; L-corner diagonals beat 40) | `test_segments_drop_hatching` |
 | `PARALLEL_DEG` | 2° | `test_pair_parallel_tolerance` |
 | `MIN_OVERLAP` | 0.6 of the shorter segment | `test_pair_requires_overlap` |
 | `MERGE_OFFSET_CM` / `MERGE_GAP_CM` / `MERGE_DEG` | 5 cm / 100 cm (bridges door gaps) / 2° | `test_merge_collinear_across_door_gap` |
