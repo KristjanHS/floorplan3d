@@ -157,6 +157,7 @@ SRC_ZIP_URL = (
     "https://sourceforge.net/projects/sweethome3d/files/SweetHome3D-source/"
     f"SweetHome3D-{SH3D_VERSION_PINNED}-src/SweetHome3D-{SH3D_VERSION_PINNED}-src.zip/download"
 )
+SRC_ZIP_SHA256 = "b82de76095b2b07fcab59637dc16bd8cd1c92e6208ed18b5e37a5d2a304beee6"
 DTD_JAVA = f"SweetHome3D-{SH3D_VERSION_PINNED}-src/src/com/eteks/sweethome3d/io/HomeXMLHandler.java"
 DTD_PATCHES = (  # NOTES.md: the shipped DTD fails lxml without these
     ("renderer CADATA", "renderer CDATA"),
@@ -340,9 +341,11 @@ def deterministic_repeat(m: re.Match[str]) -> str:
     return model
 
 
-def build_dtd(src_zip: Path, out: Path) -> None:
+def build_dtd(src_zip: Path, out: Path, sha256: str = SRC_ZIP_SHA256) -> None:
     if not src_zip.is_file():
         raise Sh3dError(f"source zip not found: {src_zip} — fetch it: curl -sSL -o {src_zip} {SRC_ZIP_URL}")
+    if (got := sha256_file(src_zip)) != sha256:
+        raise Sh3dError(f"{src_zip}: sha256 {got} != pinned {sha256} — refusing to read it")
     with zipfile.ZipFile(src_zip) as zf:
         try:
             java = zf.read(DTD_JAVA).decode("utf-8")
@@ -607,7 +610,9 @@ def build_parser() -> argparse.ArgumentParser:
     for cmd in COMMANDS:
         sub.add_parser(cmd).add_argument("name")
     sub.choices["pull"].add_argument("--force", action="store_true", help="discard edits not yet pushed")
-    sub.add_parser("dtd").add_argument("--src-zip", type=Path, default=SRC_ZIP)
+    dtd = sub.add_parser("dtd")
+    dtd.add_argument("--src-zip", type=Path, default=SRC_ZIP)
+    dtd.add_argument("--src-zip-sha256", default=SRC_ZIP_SHA256)
     return parser
 
 
@@ -616,7 +621,7 @@ def main(argv: list[str] | None = None) -> int:
     roots = Roots(homes=args.homes, src=args.src, backups=args.backups, work=args.work, dtd=args.dtd)
     try:
         if args.cmd == "dtd":
-            build_dtd(args.src_zip, roots.dtd)
+            build_dtd(args.src_zip, roots.dtd, args.src_zip_sha256)
         else:
             check_name(args.name)
             if args.cmd == "pull":

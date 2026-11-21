@@ -5,7 +5,7 @@
 - Blender 5.2.4 LTS, `~/.local/opt/blender-5.2.4-linux-x64/`, tarball sha256 `2fd14c50987426897ba60237ee996edf2b4151f4b1a72a460ca20be58c1d2d86`.
 - Upstream run-path deps at current versions via `uv add` (never its `requirements.txt` pins); exact versions in `uv.lock`.
 - SweetHome3D 7.6.1 (Windows, `C:\Program Files (x86)\Sweet Home 3D\lib\SweetHome3D.jar`, 32-bit Java 1.8.0_202): no `.dtd` in any jar.
-- SweetHome3D 7.6.1 source `work/sh3d-src/SweetHome3D-7.6.1-src.zip` sha256 `b82de76095b2b07fcab59637dc16bd8cd1c92e6208ed18b5e37a5d2a304beee6`; DTD = `io/HomeXMLHandler.java:80-463` javadoc.
+- SweetHome3D 7.6.1 source `work/sh3d-src/SweetHome3D-7.6.1-src.zip` sha256 pinned in `sh3d.SRC_ZIP_SHA256` (`build_dtd` refuses a mismatch); DTD = `io/HomeXMLHandler.java:80-463` javadoc.
 - Fetch: `curl -sSL -o work/sh3d-src/SweetHome3D-7.6.1-src.zip https://sourceforge.net/projects/sweethome3d/files/SweetHome3D-source/SweetHome3D-7.6.1-src/SweetHome3D-7.6.1-src.zip/download`
 
 ## SweetHome3D format (7.6.1 source, paths under `com/eteks/sweethome3d/`)

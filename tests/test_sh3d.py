@@ -258,7 +258,7 @@ def write_src_zip(path: Path, java: str) -> None:
 def test_dtd_extracts_and_patches(roots: sh3d.Roots, tmp_path: Path) -> None:
     src_zip = tmp_path / "src.zip"
     write_src_zip(src_zip, FAKE_JAVA)
-    assert run(roots, "dtd", "--src-zip", str(src_zip)) == 0
+    assert run(roots, "dtd", "--src-zip", str(src_zip), "--src-zip-sha256", sh3d.sha256_file(src_zip)) == 0
     dtd = roots.dtd.read_text()
     assert dtd.startswith("<!ELEMENT home (lightSourceMaterial*)>\n<!ATTLIST home\n      renderer CDATA")
     assert "name CDATA #REQUIRED>" in dtd and '"10";' not in dtd
@@ -277,7 +277,7 @@ def test_dtd_missing_zip_names_curl(roots: sh3d.Roots, tmp_path: Path, capsys: p
 def test_dtd_refuses_unloadable(roots: sh3d.Roots, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     src_zip = tmp_path / "src.zip"
     write_src_zip(src_zip, FAKE_JAVA.replace("EMPTY>", "BROKEN>"))
-    assert run(roots, "dtd", "--src-zip", str(src_zip)) == 1
+    assert run(roots, "dtd", "--src-zip", str(src_zip), "--src-zip-sha256", sh3d.sha256_file(src_zip)) == 1
     assert "does not load" in capsys.readouterr().err
     assert not roots.dtd.exists()
 
@@ -437,3 +437,11 @@ def test_make_sh3d_target_refuses_shell_metachars_in_name() -> None:
 def test_make_sh3d_target_passes_name() -> None:
     r = make_n("inspect", "NAME=x")
     assert r.returncode == 0 and "scripts/sh3d.py --dtd work/sh3d/SweetHome3D.dtd inspect x" in r.stdout
+
+
+def test_dtd_refuses_unpinned_zip(roots: sh3d.Roots, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    src_zip = tmp_path / "src.zip"
+    write_src_zip(src_zip, FAKE_JAVA)
+    assert run(roots, "dtd", "--src-zip", str(src_zip)) == 1
+    assert "!= pinned" in capsys.readouterr().err
+    assert not roots.dtd.exists()
