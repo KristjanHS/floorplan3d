@@ -1,4 +1,7 @@
-BLENDER ?= blender
+# A stale uv.lock fails every uv command instead of being silently rewritten mid-gate.
+export UV_LOCKED := 1
+# Empty tree: diff --check against it covers every tracked file, committed or not.
+EMPTY_TREE := 4b825dc642cb6eb9a060e54bf8d69288fbee4904
 
 .PHONY: help sync check lint fmt test audit
 
@@ -16,7 +19,7 @@ sync:
 	uv pip check
 
 check:
-	@git diff --check HEAD
+	@git diff --check $(EMPTY_TREE) -- . ':!*.md'
 	@$(MAKE) --no-print-directory lint test
 
 lint:
@@ -29,7 +32,7 @@ fmt:
 	uv run ruff format .
 
 test:
-	@if [ -d tests ]; then uv run pytest -q; else echo "pytest: no tests/ yet"; fi
+	@if [ -d tests ]; then uv run pytest -q || [ $$? -eq 5 ]; else echo "pytest: no tests/ yet"; fi
 
 audit:
 	uv audit
