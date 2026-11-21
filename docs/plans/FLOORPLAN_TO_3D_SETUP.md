@@ -71,3 +71,9 @@ If calibration is missing, still run, but label the output `UNSCALED` and tell m
 
 ## Expect and report honestly
 Automatic detection on scanned plans is fragile (text, dimension lines, furniture symbols confuse it). Doors/windows may be wrong or missing. The output is a **starting shell** to refine (in Blender or by tracing in Sweet Home 3D), not a finished model.
+
+## Remaining (steps 1–5 shipped `407f4b8`..`81c0a10`)
+- Floors: the page → floor mapping lives in the gitignored `plans.yaml`; prefer the 600 dpi source; rafters/roof pages are not floors.
+- Step 6: `make all` = preprocess → convert → export; `convert.py` copies the PNG into its scratch dir (bwrap tmpfs hides `/tmp`).
+- Verification per floor: calibration p1/p2/metres owed by the user (from `work/<floor>_grid.png`); until then run UNSCALED, eyeball previews, report per floor.
+- Upstream drops outer wall contours (fixture x extent −24.8 %): investigate before trusting real-floor shells; record in NOTES.md.
