@@ -1,13 +1,16 @@
 """Sweet Home 3D `.sh3d` (a ZIP) <-> an unpacked, git-tracked source tree. Format facts: NOTES.md § SweetHome3D format."""
 
 import argparse
+import codecs
 import hashlib
 import io
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import time
 import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -307,7 +310,73 @@ def build_dtd(src_zip: Path, out: Path) -> None:
     print(f"dtd: ok → {out}")
 
 
-COMMANDS: dict[str, Callable[[Roots, str], None]] = {"pull": pull, "validate": validate}
+def home_xml_bytes(path: Path) -> bytes:
+    data = path.read_bytes().removeprefix(codecs.BOM_UTF8)
+    try:
+        data.decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise Sh3dError(f"{path} is not UTF-8: {e}") from e
+    declared = re.match(rb"<\?xml[^>]*encoding=['\"]([^'\"]+)['\"]", data)
+    if declared and declared.group(1).lower() not in (b"utf-8", b"utf8"):
+        raise Sh3dError(f"{path} declares encoding {declared.group(1).decode()} — only UTF-8 is packed")
+    return data
+
+
+def push(roots: Roots, name: str) -> None:
+    tree, sh3d = roots.tree(name), roots.sh3d(name)
+    meta_path = tree / META
+    if not meta_path.is_file():
+        raise Sh3dError(f"{meta_path} not found — pull first")
+    if not sh3d.is_file():
+        raise Sh3dError(f"{sh3d} not found")
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    if sha256_file(sh3d) != meta["source_sha256"]:
+        raise Sh3dError(f"{sh3d} edited in GUI since pull — run pull first")
+    if meta["sh3d_version_pinned"] != SH3D_VERSION_PINNED:
+        print(
+            f"sh3d: warning: pulled under SH3D {meta['sh3d_version_pinned']}, pinned {SH3D_VERSION_PINNED}",
+            file=sys.stderr,
+        )
+    errors = validate_errors(tree, load_dtd(roots.dtd))
+    if errors:
+        raise Sh3dError(f"push refused — validate: {len(errors)} error(s) in {name}\n" + "\n".join(errors))
+    entries: list[dict[str, str | int]] = meta["entries"]
+    kept = [(str(e["name"]), int(e["compress_type"])) for e in entries if e["name"] not in DROPPED]
+    known = {n for n, _ in kept} | {META}
+    unknown = sorted(
+        rel for p in tree.rglob("*") if p.is_file() and (rel := p.relative_to(tree).as_posix()) not in known
+    )
+    if unknown:
+        raise Sh3dError(f"unknown file(s) in {tree} — new resources are unsupported: {', '.join(unknown)}")
+    payload: list[tuple[str, int, bytes]] = []
+    for entry, compress in kept:
+        check_entry_name(entry)
+        if entry.endswith("/"):
+            payload.append((entry, compress, b""))
+        elif not (tree / entry).is_file():
+            raise Sh3dError(f"{tree / entry} missing — entry listed in {META}")
+        else:
+            data = home_xml_bytes(tree / entry) if entry == "Home.xml" else (tree / entry).read_bytes()
+            payload.append((entry, compress, data))
+    backup = roots.backups / f"{name}-{time.strftime('%Y%m%d-%H%M%S')}.sh3d"
+    if backup.exists():
+        raise Sh3dError(f"backup {backup} exists — retry in a second")
+    roots.backups.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(sh3d, backup)
+    tmp = roots.homes / f".{name}.sh3d.tmp"
+    try:
+        with zipfile.ZipFile(tmp, "w") as zf:
+            for entry, compress, data in payload:
+                zf.writestr(zipfile.ZipInfo(entry), data, compress_type=compress)
+        os.replace(tmp, sh3d)
+    finally:
+        tmp.unlink(missing_ok=True)
+    meta["source_sha256"] = sha256_file(sh3d)
+    meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+    print(f"push: ok {name} — commit sh3d_src/{name}/{META}; reopen in SH3D")
+
+
+COMMANDS: dict[str, Callable[[Roots, str], None]] = {"pull": pull, "validate": validate, "push": push}
 
 
 def build_parser() -> argparse.ArgumentParser:

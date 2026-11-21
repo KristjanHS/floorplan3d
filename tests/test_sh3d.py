@@ -251,3 +251,64 @@ def test_numeric_attrs_match_source() -> None:
         java = zf.read(sh3d.DTD_JAVA).decode("utf-8")
     pattern = r'parse(?:Optional)?(?:Float|Integer|Long|Decimal)\(\w+, *"(\w+)"'
     assert set(re.findall(pattern, java)) == sh3d.NUMERIC_ATTRS
+
+
+def kept_entries() -> list[tuple[str, bytes, int]]:
+    return [e for e in ENTRIES if e[0] not in sh3d.DROPPED]
+
+
+def test_push_round_trip(roots: sh3d.Roots, pulled: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    original = roots.sh3d("x").read_bytes()
+    assert run(roots, "push", "x") == 0
+    assert "push: ok x" in capsys.readouterr().out
+    with zipfile.ZipFile(roots.sh3d("x")) as zf:
+        infos = zf.infolist()
+        assert [(i.filename, i.compress_type) for i in infos] == [(n, c) for n, _, c in kept_entries()]
+        assert [zf.read(i) for i in infos] == [d for _, d, _ in kept_entries()]
+    assert ("Home" in [i.filename for i in infos]) is not sh3d.DROP_HOME_ENTRY
+    (backup,) = roots.backups.iterdir()
+    assert backup.read_bytes() == original
+    meta = json.loads((pulled / sh3d.META).read_text())
+    assert meta["source_sha256"] == sh3d.sha256_file(roots.sh3d("x"))
+    backup.unlink()  # same-second second push would collide on the backup name
+    assert run(roots, "push", "x") == 0  # no pull in between: meta sha tracks the pushed file
+
+
+def test_push_refuses_gui_edit_since_pull(roots: sh3d.Roots, pulled: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    make_sh3d(roots.sh3d("x"), ENTRIES[1:])
+    edited = roots.sh3d("x").read_bytes()
+    assert run(roots, "push", "x") == 1
+    assert "edited in GUI since pull" in capsys.readouterr().err
+    assert roots.sh3d("x").read_bytes() == edited
+    assert not roots.backups.exists()
+
+
+def test_push_strips_bom(roots: sh3d.Roots, pulled: Path) -> None:
+    (pulled / "Home.xml").write_bytes(b"\xef\xbb\xbf" + HOME_XML)
+    assert run(roots, "push", "x") == 0
+    with zipfile.ZipFile(roots.sh3d("x")) as zf:
+        assert zf.read("Home.xml") == HOME_XML
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        (b"</room>", b"</rom>", "malformed XML"),
+        (b"encoding='UTF-8'", b"encoding='ISO-8859-1'", "only UTF-8"),
+    ],
+)
+def test_push_refuses_bad_home_xml(
+    roots: sh3d.Roots, pulled: Path, capsys: pytest.CaptureFixture[str], old: bytes, new: bytes, message: str
+) -> None:
+    original = roots.sh3d("x").read_bytes()
+    edit_xml(pulled, old, new)
+    assert run(roots, "push", "x") == 1
+    assert message in capsys.readouterr().err
+    assert roots.sh3d("x").read_bytes() == original
+    assert not roots.backups.exists()
+
+
+def test_push_refuses_unknown_src_file(roots: sh3d.Roots, pulled: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    (pulled / "2").write_bytes(b"new texture")
+    assert run(roots, "push", "x") == 1
+    assert "unknown file(s)" in capsys.readouterr().err
