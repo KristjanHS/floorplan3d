@@ -53,6 +53,10 @@ class Floor:
         return self.work / f"{self.name}_grid.png"
 
     @property
+    def raw_blend(self) -> Path:
+        return self.work / self.name / f"{self.name}_raw.blend"
+
+    @property
     def outdir(self) -> Path:
         return self.output / self.name
 

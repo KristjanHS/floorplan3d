@@ -8,3 +8,6 @@
 ## Upstream quirks
 - `make upstream-test` skips `Testing/visuals/` (`cv2.imshow` aborts without a display) and pre-creates `Configs/` (`test_config` reads `../Configs`).
 - Upstream code runs under `scripts/sandbox.py` (bwrap: no network, read-only FS except named dirs).
+- Runtime shims in `scripts/ftb_generate.py` (upstream stays unpatched): float points for `cv2.pointPolygonTest` (OpenCV 5), `np.int0` alias (NumPy 2).
+- No doors/windows on Linux: the Blender script joins their data paths with `\\` (`floorplan_to_3dObject_in_blender.py:220-262`).
+- `convert.py` links `Images/` into the scratch dir: door/window templates load CWD-relative (`const.DOOR_MODEL`).

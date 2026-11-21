@@ -25,7 +25,7 @@ extend-exclude = ["vendor", "**/*.md"]
 [tool.pyright]
 include = ["scripts", "tests"]
 exclude = ["vendor", ".venv"]
-extraPaths = ["scripts"]
+extraPaths = ["scripts", "vendor/FloorplanToBlender3d"]
 
 [tool.pytest.ini_options]
 pythonpath = ["scripts"]

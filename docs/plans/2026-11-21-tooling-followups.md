@@ -15,9 +15,3 @@ itself lives in `FLOORPLAN_TO_3D_SETUP.md`.
   which may be older. Syntax that is valid in 3.12 could pass `make check` and then fail inside Blender.
 - Once the Blender version is known, set a per-path ruff `target-version` / pyright `pythonVersion` for
   the bpy scripts, or add a `$(BLENDER) --background --python-expr` smoke test.
-
-## 5. Upstream writes into `vendor/` at runtime
-
-- Once the submodule is added, confirm where `system.ini`, `Configs/` and `target/` land. Then either
-  redirect them outside `vendor/` or set `ignore = untracked` in `.gitmodules`, as
-  `.claude/rules/dev-workflow.md` says.
