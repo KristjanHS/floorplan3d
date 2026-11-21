@@ -16,6 +16,7 @@
 - (e) `CONTENT_ATTRS` = `model icon planIcon image`, + `property value` when `type="CONTENT"`: `io/HomeXMLHandler.java:798,820,1235-1237,1800`; URL first, else entry (`:1929`).
 - (f) `io/HomeXMLHandler.java` `parse(Optional)?<T>(attributes…, "<name>")` calls: `NUMERIC_ATTRS` = Float|Decimal, `INT_ATTRS` = Integer|Long,
   `COLOR_ATTRS` = Color (`Long.parseLong(v, 16)`); `Float.parseFloat` accepts `NaN` (`:1916`).
+- Windows opens a pushed home via the realpath `make push` prints (GUI-confirmed); a symlinked `homes/` path under `\\wsl$` is untested.
 - DTD as shipped fails lxml: patch `renderer CADATA`→`CDATA`, `lightSourceMaterial name #REQUIRED`→`name CDATA #REQUIRED`, `endMarkSize CDATA "10";`→`"10"`.
 
 ## Upstream quirks

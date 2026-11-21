@@ -1,6 +1,8 @@
 # Task: extend `floorplan3d` so Claude Code can safely edit my Sweet Home 3D files
 
-→ plan: `docs/plans/2026-11-21-sh3d-editing.md`
+Status: ✅ SHIPPED 2026-11-21
+
+→ plan: `docs/plans/archive/2026-11-21-sh3d-editing.md`
 
 You are Claude Code working in my existing `floorplan3d` repo. Add a small, reliable workflow for editing `.sh3d` files as text (Home.xml) while I keep using the Sweet Home 3D GUI for viewing and manual work. Work step by step, verify each step, and ask me before anything irreversible.
 

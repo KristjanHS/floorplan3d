@@ -1,6 +1,8 @@
 # SweetHome3D editing — implementation plan
 
-Spec: `docs/plans/SWEETHOME3D_EDITING_SETUP.md`
+Status: ✅ SHIPPED 2026-11-21 — open: symlinked `homes/` path under `\\wsl$` untested (NOTES.md).
+
+Spec: `docs/plans/archive/SWEETHOME3D_EDITING_SETUP.md`
 Refactor-first: skipped — `scripts/sh3d.py` is a new standalone module; no existing code is restructured.
 
 ## Constants (`scripts/sh3d.py`)
