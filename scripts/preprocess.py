@@ -13,6 +13,7 @@ import plans
 GRID_STEP = 100
 MAX_SKEW_DEG = 10.0
 FRAME_MARGIN = 8  # work px between the building's silhouette and its outline frame
+FRAME_BRIDGE = 101  # work px: exterior door gaps narrower than this close before the silhouette fills
 MIN_OUTLINE_COVER = 0.97
 
 
@@ -65,8 +66,9 @@ def wall_mask(binary: np.ndarray, min_px: int, min_area: int) -> np.ndarray:
     lines go. No closing op: door gaps stay open."""
     ink = (binary == 0).astype(np.uint8)
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (min_px, min_px))
-    a = min_px // 2  # an even kernel has no centre: dilate about the mirrored anchor or the strokes shift 1 px
-    core = cv2.dilate(cv2.erode(ink, kernel, anchor=(a, a)), kernel, anchor=(min_px - 1 - a,) * 2) & ink
+    a = min_px // 2  # an even kernel is not point-symmetric: dilate by its reflection about the mirrored anchor
+    flipped = np.ascontiguousarray(kernel[::-1, ::-1])
+    core = cv2.dilate(cv2.erode(ink, kernel, anchor=(a, a)), flipped, anchor=(min_px - 1 - a,) * 2) & ink
     _, labels, stats, _ = cv2.connectedComponentsWithStats(core, connectivity=8)
     keep = np.flatnonzero(stats[:, cv2.CC_STAT_AREA] >= min_area)
     keep = keep[keep != 0]  # label 0 is the background
@@ -84,14 +86,19 @@ def outline_cover(binary: np.ndarray) -> float:
 
 
 def outline_frame(binary: np.ndarray, margin: int = FRAME_MARGIN) -> np.ndarray:
-    """A 2-px outline `margin` px outside the building's filled silhouette (convex hull when that stays in pieces).
+    """A 3-px outline `margin` px outside the building's filled silhouette (convex hull when that stays in pieces).
 
     Upstream keeps only walls inside the largest gray<230 contour and floors that contour; with dimension lines
-    masked away that contour would be the outer wall itself and drop it. Upstream's wall opening erases 2-px lines,
+    masked away that contour would be the outer wall itself and drop it. Upstream's wall opening erases 3-px lines,
     so the frame shapes the floor and the filter without becoming a wall.
     """
     ink = (binary == 0).astype(np.uint8)
-    contours, _ = cv2.findContours(ink, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    pad = FRAME_BRIDGE  # pad so the closing's erosion sees no ink beyond the image edge
+    bridge = cv2.getStructuringElement(cv2.MORPH_RECT, (FRAME_BRIDGE, FRAME_BRIDGE))
+    closed = cv2.morphologyEx(
+        cv2.copyMakeBorder(ink, pad, pad, pad, pad, cv2.BORDER_CONSTANT, value=0), cv2.MORPH_CLOSE, bridge
+    )[pad:-pad, pad:-pad]
+    contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
         return binary
     silhouette = np.zeros_like(ink)

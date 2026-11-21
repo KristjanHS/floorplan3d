@@ -128,6 +128,14 @@ def l_plan() -> np.ndarray:
 L_ROOMS = ["r1=109.5,230:489.5,230", "r2=109.5,470:289.5,470"]
 
 
+def test_outline_frame_follows_the_l_not_its_bbox():
+    img = preprocess.outline_frame(l_plan())
+    contours, _ = cv2.findContours((img < 230).astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    outline = max(contours, key=cv2.contourArea)  # as upstream's detect.outer_contours picks it
+    assert cv2.pointPolygonTest(outline, (400, 470), False) < 0  # the L's empty corner
+    assert cv2.pointPolygonTest(outline, (200, 470), False) > 0  # room 2, behind its exterior door
+
+
 @pytest.mark.parametrize("framed", [True, False], ids=["frame", "no-frame"])
 def test_outline_frame_keeps_the_outer_walls(tmp_path: Path, framed: bool):
     img = preprocess.outline_frame(l_plan()) if framed else l_plan()

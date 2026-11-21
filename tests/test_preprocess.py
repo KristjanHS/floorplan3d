@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import cv2
@@ -57,8 +58,19 @@ def test_preprocess_deskews_and_downscales(floor):
     assert 0.5 < meta["mask_ink_ratio"] < 0.97
     assert meta["outline_cover"] >= preprocess.MIN_OUTLINE_COVER
     column = out[:, out.shape[1] // 2] == 0
+    assert column.any()
     top = int(np.argmax(column))
-    assert column[top : top + 4].sum() <= 3  # a 2-px outline frame sits above the ~10-px wall
+    assert column[top : top + 4].sum() <= 3  # a 3-px outline frame sits above the ~10-px wall
+
+
+def test_preprocess_without_wall_mask_keeps_all_ink_and_draws_no_frame(floor):
+    meta = preprocess.preprocess(replace(floor, wall_min_px=0))
+    out = read(floor.png, cv2.IMREAD_GRAYSCALE)
+    assert meta["mask_ink_ratio"] == 1.0
+    column = out[:, out.shape[1] // 2] == 0
+    assert column.any()
+    top = int(np.argmax(column))
+    assert column[top : top + 4].all()  # the wall itself is the topmost ink
 
 
 def test_remove_specks_keeps_walls():
@@ -101,6 +113,15 @@ def test_wall_mask_drops_bold_glyphs():
     assert np.count_nonzero(out[60:160, 100:108] == 0) > 0.95 * 800  # opening only rounds its corners
 
 
+@pytest.mark.parametrize("min_px", [4, 6])
+def test_wall_mask_keeps_a_diagonal_wall(min_px: int):
+    img = np.full((300, 300), 255, np.uint8)
+    cv2.line(img, (50, 50), (250, 250), 0, 14)  # 45°, 14 px thick
+    ink = img == 0
+    out = preprocess.wall_mask(img, min_px=min_px, min_area=300)
+    assert np.count_nonzero(out[ink] == 0) / np.count_nonzero(ink) > 0.99
+
+
 @pytest.mark.parametrize(("cut", "expect_ok"), [(False, True), (True, False)], ids=["door-gap", "split"])
 def test_outline_cover(cut: bool, expect_ok: bool):
     img = np.full((460, 600), 255, np.uint8)
@@ -116,6 +137,13 @@ def test_plans_rejects_degenerate_calibration(tmp_path):
     y = tmp_path / "plans.yaml"
     y.write_text("floors:\n  - name: a\n    pdf: a.pdf\n    calibration: {p1: [5, 5], p2: [5, 5], metres: 3}\n")
     with pytest.raises(ValueError, match="distinct"):
+        plans.load(y)
+
+
+def test_plans_rejects_a_negative_wall_min_px(tmp_path):
+    y = tmp_path / "plans.yaml"
+    y.write_text("floors:\n  - name: a\n    pdf: a.pdf\n    wall_min_px: -1\n")
+    with pytest.raises(ValueError, match="wall_min_px"):
         plans.load(y)
 
 
