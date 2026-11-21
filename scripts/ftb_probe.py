@@ -4,7 +4,7 @@
 """Per-stage extent of upstream's wall pipeline for one floor.ini, and the first stage that loses the drawing.
 
 S0 ink · S1 wall_filter · S2 precise_boxes · S3 outer_contours (the filter mask) · S4 boxes kept by it ·
-S5 Data/0/wall_vertical_verts · S6 the export report's extent_raw_units.
+S5 Data/0/wall_vertical_verts · S6 the export report's extent_raw_units (all meshes: walls, floor, rooms).
 """
 
 import argparse
@@ -196,12 +196,12 @@ def probe(ini: Path, report: Path | None, targets: list[dict]) -> dict:
 
 def table(res: dict) -> str:
     names = {"S0": "ink", "S1": "wall_filter", "S2": "precise_boxes", "S3": "outer_contour", "S4": "contour kept",
-             "S5": "wall verts", "S6": "report extent"}  # fmt: skip
-    lines = [f"{'stage':<18} {'extent px':>17}  ratio x / y"]
+             "S5": "wall verts", "S6": "report extent (all meshes)"}  # fmt: skip
+    lines = [f"{'stage':<31} {'extent px':>17}  ratio x / y"]
     for k, s in res["stages"].items():
         e = "-" if s["extent"] is None else f"{s['extent'][0]:7.1f} × {s['extent'][1]:7.1f}"
         r = "-" if s["ratio"] is None else f"{s['ratio'][0]:.3f} / {s['ratio'][1]:.3f}"
-        lines.append(f"{k} {names[k]:<15} {e:>17}  {r}")
+        lines.append(f"{k} {names[k]:<28} {e:>17}  {r}")
     for t in res["targets"]:
         cells = []
         for k, fs in t["faces"].items():
