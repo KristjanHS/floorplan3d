@@ -49,6 +49,15 @@ def test_pair_recovers_centre_and_thickness(faces: list[Wall]) -> None:
             assert hit, (p1, p2, f)
 
 
+def test_pair_thick_walls() -> None:
+    drawn = [((100, 100), (500, 100), 32), ((100, 100), (100, 500), 32)]  # 40 cm
+    paired = walls.pair(walls.segments(plan_image(drawn, None), PPC), PPC)
+    for p1, p2, t in drawn:
+        for f in (0.2, 0.8):
+            q = along(p1, p2, f)
+            assert [w for w in paired if seg_dist(q, w) <= 1 and abs(w.thickness - t) <= 1], (p1, p2, f, paired)
+
+
 def face(y: float, x1: float = 0, x2: float = 100, tilt: float = 0) -> Wall:
     return Wall((x1, y), (x2, y + (x2 - x1) * math.tan(math.radians(tilt))))
 
@@ -60,8 +69,20 @@ def test_pair_rejects_gap_outside_range() -> None:
 
 
 def test_pair_requires_overlap() -> None:
-    assert len(walls.pair([face(0), face(16, 30, 130)], PPC)) == 1  # 70 % overlap
-    assert walls.pair([face(0), face(16, 50, 150)], PPC) == []  # 50 %
+    assert len(walls.pair([face(0, 0, 50), face(16, 15, 65)], PPC)) == 1  # 70 % of 50 px, 35 px < MIN_SEG_CM
+    assert len(walls.pair([face(0, 0, 200), face(16, 100, 300)], PPC)) == 1  # 50 %, 100 px >= MIN_SEG_CM
+    assert walls.pair([face(0, 0, 60), face(16, 30, 90)], PPC) == []  # 50 %, 30 px
+
+
+def test_pair_uses_each_face_stretch_once() -> None:
+    assert len(walls.pair([face(0), face(16), face(32)], PPC)) == 1
+
+
+def test_pair_symmetric_in_face_order() -> None:
+    a, b = face(0, 0, 1000, tilt=0.5), face(16, 800, 1000)
+    (ab,), (ba,) = walls.pair([a, b], PPC), walls.pair([b, a], PPC)
+    assert ab.thickness == pytest.approx(ba.thickness, abs=0.1)
+    assert np.ravel(sorted([ab.p1, ab.p2])) == pytest.approx(np.ravel(sorted([ba.p1, ba.p2])), abs=0.5)
 
 
 def test_pair_parallel_tolerance() -> None:
@@ -86,6 +107,16 @@ def test_snap_l_and_t_junctions() -> None:
     assert t.p2 == pytest.approx((300, 0))
 
 
+def test_snap_ignores_line_extension_past_wall_end() -> None:
+    w = Wall((300 + 100 * PPC, 8), (380, 200), 10)
+    assert walls.snap([Wall((0, 0), (300, 0), 16), w], PPC)[1] == w
+
+
+def test_snap_keeps_short_wall_from_collapsing() -> None:
+    stub = Wall((200, 5), (200, 30), 16)
+    assert walls.snap([Wall((0, 0), (400, 0), 32), stub], PPC)[1] == stub
+
+
 def test_detect_end_to_end() -> None:
     found = walls.detect(plan_image(), PPC)
     assert len(found) == len(EXPECTED)
@@ -98,3 +129,10 @@ def test_detect_end_to_end() -> None:
             and abs(w.thickness - t) <= 2
             for w in found
         ), (p1, p2, t, found)
+
+
+def test_detect_staggered_t_junctions() -> None:
+    drawn = [((100, 400), (1000, 400), 16), ((300, 100), (300, 400), 10), ((600, 400), (600, 800), 10)]
+    found = walls.detect(plan_image(drawn, None, (900, 1100)), PPC)
+    (corridor,) = [w for w in found if abs(w.p1[1] - w.p2[1]) < 5]
+    assert sorted([corridor.p1[0], corridor.p2[0]]) == pytest.approx([92, 1008], abs=3)

@@ -91,7 +91,7 @@ def faces_px(wall: TracedWall, bg: LevelBackground) -> list[tuple[Point, Point]]
 
 
 def ink_rate(gray: np.ndarray, faces: list[tuple[Point, Point]]) -> float:
-    """Share of in-image samples (1 px apart) along the faces that land on ink."""
+    """Share of samples (1 px apart) along the faces that land on ink; off-image samples count as misses."""
     ink = cv2.dilate((gray < DARK).astype(np.uint8), np.ones((2 * INK_RADIUS_PX + 1,) * 2, np.uint8))
     h, w = gray.shape
     hits = total = 0
@@ -100,7 +100,7 @@ def ink_rate(gray: np.ndarray, faces: list[tuple[Point, Point]]) -> float:
         us = np.rint(np.linspace(u1, u2, n + 1)).astype(int)
         vs = np.rint(np.linspace(v1, v2, n + 1)).astype(int)
         inside = (us >= 0) & (us < w) & (vs >= 0) & (vs < h)
-        total += int(inside.sum())
+        total += len(us)
         hits += int(ink[vs[inside], us[inside]].sum())
     return hits / total if total else 0.0
 

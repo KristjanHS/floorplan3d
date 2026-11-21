@@ -72,6 +72,10 @@ def test_ink_rate_separates_fit_from_shift(tmp_path: Path) -> None:
     assert sh3d_walls.ink_rate(img, sh3d_walls.faces_px(wall(150), bg)) < 0.3
 
 
+def test_ink_rate_counts_off_image_as_miss() -> None:
+    assert sh3d_walls.ink_rate(drawn_plan(), [((-1000, 45), (180, 45))]) < 0.3
+
+
 def test_overlay_skips_auto_walls_and_names_trace(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     src, work = tmp_path / "src", tmp_path / "work"
     (src / "x").mkdir(parents=True)

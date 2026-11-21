@@ -1,6 +1,6 @@
 # SH3D auto walls — generate internal walls into Home.xml, user fixes in the GUI
 
-Status: in progress — Stages 1–2 committed 2026-11-21; next Stage 3.1. Goal: `make walls NAME=<name>` writes detected walls into `sh3d_src/<NAME>/Home.xml`, tagged as generated;
+Status: in progress — Stages 1–2.3 committed 2026-11-21; next Stage 2.4. Goal: `make walls NAME=<name>` writes detected walls into `sh3d_src/<NAME>/Home.xml`, tagged as generated;
 the user then edits (not traces) them in SweetHome3D. Measured results (scores, overlay verdicts) → a local results doc, never here.
 
 ## Rulings (user, 2026-11-21)
@@ -29,7 +29,8 @@ Recommend: NEW `scripts/walls.py` (pure numpy/cv2 geometry: segments, pairing, m
 | `GAP_CM` | 8–40 cm (→ px via level scale) | `test_pair_rejects_gap_outside_range` |
 | `MIN_SEG_CM` | 50 cm (drops hatch strokes; L-corner diagonals beat 40) | `test_segments_drop_hatching` |
 | `PARALLEL_DEG` | 2° | `test_pair_parallel_tolerance` |
-| `MIN_OVERLAP` | 0.6 of the shorter segment | `test_pair_requires_overlap` |
+| `MIN_OVERLAP` | 0.6 of the shorter segment, or ≥ `MIN_SEG_CM` absolute | `test_pair_requires_overlap`, `test_detect_staggered_t_junctions` |
+| `STROKE_PX` / `GAP_SLACK_PX` | 5 px / 1 px | `test_pair_thick_walls` |
 | `MERGE_OFFSET_CM` / `MERGE_GAP_CM` / `MERGE_DEG` | 5 cm / 100 cm (bridges door gaps) / 2° | `test_merge_collinear_across_door_gap` |
 | `SNAP_CM` | 15 cm | `test_snap_l_and_t_junctions` |
 | `MATCH_DIST_CM` / `MATCH_DEG` / `MATCH_COVER` | 10 cm / 3° / 0.5 of traced length | `test_score_tolerance_edges` |
@@ -49,6 +50,8 @@ Recommend: NEW `scripts/walls.py` (pure numpy/cv2 geometry: segments, pairing, m
   Tests: fixture thicknesses recovered ±2 px, centre ±1 px; `test_pair_rejects_gap_outside_range` (50 cm gap → none); `test_pair_requires_overlap`.
 - **2.3 Merge + snap.** `merge(walls)` joins collinear pieces; `snap(walls)` moves endpoints within `SNAP_CM` onto shared junction points.
   Tests: `test_merge_collinear_across_door_gap`, `test_snap_l_and_t_junctions`; falsifier: two parallel walls 30 cm apart must NOT merge.
+- **2.4 Hatch in thick walls.** 45° hatch in 40 cm walls (~44 px) survives `MIN_SEG_CM` and pairs into junk diagonals; retune or angle-filter.
+  Test: thick-wall fixture `detect()` returns exactly its walls, free ends at the drawn overhang.
 
 ## Stage 3 — Score + overlay (thinnest visible slice; no Home.xml writes)
 - **3.1 Score.** `walls.score(generated, traced)` → matched/traced, unmatched traced ids, extras. Tests `test_score_tolerance_edges` (9 cm/2.9° match; 11 cm/3.1° miss), `test_score_pass_threshold`.

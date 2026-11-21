@@ -8,8 +8,9 @@ import cv2
 import numpy as np
 
 GAP_CM = (8.0, 40.0)
+GAP_SLACK_PX = 1.0  # LSD face localisation error; a wall drawn at exactly 40 cm measures ~40.2
 MIN_SEG_CM = 50.0  # hatch diagonals across an L corner exceed the wall-thickness diagonal
-STROKE_CM = 4.0  # LSD edges of one drawn stroke closer than this collapse into one face
+STROKE_PX = 5.0  # LSD edges of one drawn stroke closer than this collapse into one face; pixels, not plan scale
 PARALLEL_DEG = 2.0
 MIN_OVERLAP = 0.6
 MERGE_OFFSET_CM, MERGE_GAP_CM, MERGE_DEG = 5.0, 100.0, 2.0
@@ -86,8 +87,7 @@ def segments(img: np.ndarray, px_per_cm: float) -> list[Wall]:
     if lines is None:
         return []
     faces = [Wall((x1, y1), (x2, y2)) for x1, y1, x2, y2 in lines.reshape(-1, 4).tolist()]
-    stroke = STROKE_CM * px_per_cm
-    faces = _join(faces, stroke, stroke, PARALLEL_DEG)
+    faces = _join(faces, STROKE_PX, STROKE_PX, PARALLEL_DEG)
     return [f for f in faces if f.length >= MIN_SEG_CM * px_per_cm]
 
 
@@ -95,30 +95,43 @@ def _free(used: list[tuple[float, float]], t0: float, t1: float, tol: float) -> 
     return all(min(t1, u1) - max(t0, u0) <= tol for u0, u1 in used)
 
 
+def _between(a: Wall, b: Wall) -> tuple[float, float, np.ndarray, np.ndarray]:
+    """Overlap length, face gap at the overlap midpoint and the centre-line ends; symmetric in a and b."""
+    da, db = _axes(a)[0], _axes(b)[0]
+    d = da + (db if da @ db >= 0 else -db)
+    d = d / np.linalg.norm(d)
+    n = np.array([-d[1], d[0]])
+    o = (np.add(a.p1, a.p2) + np.add(b.p1, b.p2)) / 4
+    ta, tb = (sorted(float(np.subtract(p, o) @ d) for p in (w.p1, w.p2)) for w in (a, b))
+    s0, s1 = max(ta[0], tb[0]), min(ta[1], tb[1])
+    m = (s0 + s1) / 2
+    qa, qb = (
+        np.asarray(w.p1) + dw * ((m - float(np.subtract(w.p1, o) @ d)) / float(dw @ d)) for w, dw in ((a, da), (b, db))
+    )
+    c = (qa + qb) / 2
+    return s1 - s0, abs(float((qa - qb) @ n)), c + d * (s0 - m), c + d * (s1 - m)
+
+
 def pair(faces: list[Wall], px_per_cm: float) -> list[Wall]:
     """Centre-line walls from parallel, overlapping faces GAP_CM apart; nearest gap first, each face stretch used once."""
-    lo, hi = GAP_CM[0] * px_per_cm, GAP_CM[1] * px_per_cm
-    cands: list[tuple[float, int, int, np.ndarray, np.ndarray, float]] = []
+    lo, hi = GAP_CM[0] * px_per_cm - GAP_SLACK_PX, GAP_CM[1] * px_per_cm + GAP_SLACK_PX
+    cands: list[tuple[float, int, int, np.ndarray, np.ndarray]] = []
     for i, j in combinations(range(len(faces)), 2):
         a, b = faces[i], faces[j]
         if _angle(a, b) > PARALLEL_DEG:
             continue
-        t0, t1, off = _span(a, b)
-        s0, s1 = max(t0, 0.0), min(t1, a.length)
-        if s1 - s0 < MIN_OVERLAP * min(a.length, b.length) or not lo <= abs(off) <= hi:
+        overlap, gap, p, q = _between(a, b)
+        if overlap < min(MIN_OVERLAP * min(a.length, b.length), MIN_SEG_CM * px_per_cm) or not lo <= gap <= hi:
             continue
-        d, n = _axes(a)
-        centre = np.asarray(a.p1) + n * off / 2
-        cands.append((abs(off), i, j, centre + d * s0, centre + d * s1, abs(off)))
+        cands.append((gap, i, j, p, q))
     used: dict[int, list[tuple[float, float]]] = {}
-    tol = STROKE_CM * px_per_cm
     out: list[Wall] = []
-    for _, i, j, p, q, gap in sorted(cands, key=lambda c: c[0]):
+    for gap, i, j, p, q in sorted(cands, key=lambda c: c[0]):
         stretch: dict[int, tuple[float, float]] = {}
         for k in (i, j):
             t0, t1 = sorted(float(np.subtract(x, faces[k].p1) @ _axes(faces[k])[0]) for x in (p, q))
             stretch[k] = (t0, t1)
-        if not all(_free(used.get(k, []), *stretch[k], tol) for k in (i, j)):
+        if not all(_free(used.get(k, []), *stretch[k], STROKE_PX) for k in (i, j)):
             continue
         for k in (i, j):
             used.setdefault(k, []).append(stretch[k])
@@ -158,6 +171,8 @@ def snap(walls: list[Wall], px_per_cm: float) -> list[Wall]:
                     best = (dist, x)
             if best is not None:
                 ends[k] = best[1]
+        if math.dist(*ends) < MIN_SEG_CM * px_per_cm / 2:
+            ends = [np.asarray(w.p1, float), np.asarray(w.p2, float)]
         out.append(Wall((float(ends[0][0]), float(ends[0][1])), (float(ends[1][0]), float(ends[1][1])), w.thickness))
     return out
 
