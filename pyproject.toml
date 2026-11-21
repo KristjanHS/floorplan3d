@@ -1,0 +1,27 @@
+[project]
+name = "floorplan3d"
+version = "0.1.0"
+description = "Scanned floor-plan PDFs to scaled 3D models via FloorplanToBlender3d"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[tool.ruff]
+line-length = 120
+# extend-exclude, not exclude: the bare key replaces ruff's defaults (.venv, …).
+# **/*.md: ruff >=0.16 formats Python code blocks inside Markdown — keep docs/rules untouched.
+extend-exclude = ["vendor", "**/*.md"]
+
+[tool.pyright]
+include = ["scripts", "tests"]
+exclude = ["vendor", ".venv"]
+
+[tool.pytest.ini_options]
+pythonpath = ["scripts"]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.414",
+    "pytest>=9.2.0",
+    "ruff>=0.17.6",
+]
