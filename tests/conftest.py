@@ -51,18 +51,23 @@ def _tick() -> None:
             took = time.monotonic() - start
             if took < SLOW_S:
                 continue
-            if not _ticking and _midline:
-                _write("\n", ends_line=True)
-            _ticking = True
-            _write(_slow_line(nodeid, took, " …"), ends_line=False)
+            try:
+                if not _ticking and _midline:
+                    _write("\n", ends_line=True)
+                _ticking = True
+                _write(_slow_line(nodeid, took, " …"), ends_line=False)
+            except OSError:  # terminal gone: stop ticking rather than fail whichever test is running
+                return
 
 
 def pytest_configure(config: pytest.Config) -> None:
     global _config, _tty
     path = os.environ.get("GATE_PROGRESS_TTY")
-    if path and not hasattr(config, "workerinput"):
+    # One test at a time only: under xdist (worker or controller) starts and finishes interleave.
+    parallel = hasattr(config, "workerinput") or getattr(config.option, "numprocesses", None)
+    if path and not parallel:
         try:
-            _tty = open(path, "w")  # noqa: SIM115 — held for the session, closed in unconfigure
+            _tty = open(path, "w", encoding="utf-8")  # noqa: SIM115 — held for the session, closed in unconfigure
         except OSError:
             _tty = None
         else:
