@@ -12,6 +12,8 @@ import plans
 
 GRID_STEP = 100
 MAX_SKEW_DEG = 10.0
+FRAME_MARGIN = 8  # work px between the building's silhouette and its outline frame
+MIN_OUTLINE_COVER = 0.97
 
 
 def render(pdf: Path, page: int, dpi: int) -> np.ndarray:
@@ -58,6 +60,51 @@ def remove_specks(binary: np.ndarray, min_px: int) -> np.ndarray:
     return out
 
 
+def wall_mask(binary: np.ndarray, min_px: int, min_area: int) -> np.ndarray:
+    """Only strokes >= min_px wide (opening by a min_px ellipse) in components >= min_area px; text and dimension
+    lines go. No closing op: door gaps stay open."""
+    ink = (binary == 0).astype(np.uint8)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (min_px, min_px))
+    a = min_px // 2  # an even kernel has no centre: dilate about the mirrored anchor or the strokes shift 1 px
+    core = cv2.dilate(cv2.erode(ink, kernel, anchor=(a, a)), kernel, anchor=(min_px - 1 - a,) * 2) & ink
+    _, labels, stats, _ = cv2.connectedComponentsWithStats(core, connectivity=8)
+    keep = np.flatnonzero(stats[:, cv2.CC_STAT_AREA] >= min_area)
+    keep = keep[keep != 0]  # label 0 is the background
+    return np.where(np.isin(labels, keep), 0, 255).astype(np.uint8)
+
+
+def outline_cover(binary: np.ndarray) -> float:
+    """Largest external contour's bbox over the whole ink bbox (min of x and y extent ratio); 1.0 without ink."""
+    contours, _ = cv2.findContours((binary == 0).astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return 1.0
+    _, _, w, h = cv2.boundingRect(max(contours, key=cv2.contourArea))
+    _, _, w_all, h_all = cv2.boundingRect(np.vstack(contours))
+    return min(w / w_all, h / h_all)
+
+
+def outline_frame(binary: np.ndarray, margin: int = FRAME_MARGIN) -> np.ndarray:
+    """A 2-px outline `margin` px outside the building's filled silhouette (convex hull when that stays in pieces).
+
+    Upstream keeps only walls inside the largest gray<230 contour and floors that contour; with dimension lines
+    masked away that contour would be the outer wall itself and drop it. Upstream's wall opening erases 2-px lines,
+    so the frame shapes the floor and the filter without becoming a wall.
+    """
+    ink = (binary == 0).astype(np.uint8)
+    contours, _ = cv2.findContours(ink, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return binary
+    silhouette = np.zeros_like(ink)
+    cv2.drawContours(silhouette, contours, -1, 1, cv2.FILLED)
+    grown = cv2.dilate(silhouette, cv2.getStructuringElement(cv2.MORPH_RECT, (2 * margin + 1, 2 * margin + 1)))
+    outer, _ = cv2.findContours(grown, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    if len(outer) > 1:
+        outer = (cv2.convexHull(np.vstack(outer)),)
+    out = binary.copy()
+    cv2.drawContours(out, outer, -1, 0, 2)
+    return out
+
+
 def downscale(binary: np.ndarray, max_side: int) -> tuple[np.ndarray, float]:
     scale = min(1.0, max_side / max(binary.shape))
     if scale == 1.0:
@@ -85,7 +132,15 @@ def preprocess(floor: plans.Floor) -> dict:
     if abs(angle) > 0.05:
         gray = rotate(gray, angle)
     clean = remove_specks(binarize(gray, floor.binarize), floor.min_speck_px)
-    out, scale = downscale(clean, floor.max_side)
+    masked = wall_mask(clean, floor.wall_min_px, floor.wall_min_area) if floor.wall_min_px else clean
+    ink = np.count_nonzero(clean == 0)
+    mask_ink_ratio = np.count_nonzero(masked == 0) / ink if ink else 0.0
+    out, scale = downscale(masked, floor.max_side)
+    cover = outline_cover(out)
+    if cover < MIN_OUTLINE_COVER:
+        print(f"WARNING {floor.name}: outline_cover {cover:.3f} < {MIN_OUTLINE_COVER} (largest wall block)")
+    if floor.wall_min_px:
+        out = outline_frame(out)
     floor.png.parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(floor.png), out)
     cv2.imwrite(str(floor.grid), grid(out))
@@ -95,6 +150,9 @@ def preprocess(floor: plans.Floor) -> dict:
         "dpi": floor.dpi,
         "deskew_deg": round(angle, 3),
         "downscale": scale,
+        "wall_min_px": floor.wall_min_px,
+        "mask_ink_ratio": round(mask_ink_ratio, 4),
+        "outline_cover": round(cover, 4),
         "width": out.shape[1],
         "height": out.shape[0],
     }

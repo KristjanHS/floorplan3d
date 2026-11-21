@@ -22,6 +22,8 @@ def make_pdf(path: Path, skew: float) -> None:
     shape.draw_rect(pymupdf.Rect(80, 80, 520, 320))
     shape.draw_line((300, 80), (300, 320))
     shape.finish(width=6, color=(0, 0, 0), morph=morph)
+    shape.draw_line((80, 350), (520, 350))  # dimension line: the wall mask drops it
+    shape.finish(width=1.5, color=(0, 0, 0), morph=morph)
     for x in range(100, 500, 40):
         shape.draw_circle((x, 360), 0.4)
     shape.finish(width=0, fill=(0, 0, 0))
@@ -51,6 +53,12 @@ def test_preprocess_deskews_and_downscales(floor):
     assert meta["downscale"] == pytest.approx(1000 / 1250, abs=1e-3)
     assert set(np.unique(out)) <= {0, 255}
     assert read(floor.grid).shape[:2] == out.shape
+    assert meta["wall_min_px"] == 6
+    assert 0.5 < meta["mask_ink_ratio"] < 0.97
+    assert meta["outline_cover"] >= preprocess.MIN_OUTLINE_COVER
+    column = out[:, out.shape[1] // 2] == 0
+    top = int(np.argmax(column))
+    assert column[top : top + 4].sum() <= 3  # a 2-px outline frame sits above the ~10-px wall
 
 
 def test_remove_specks_keeps_walls():
@@ -60,6 +68,48 @@ def test_remove_specks_keeps_walls():
     out = preprocess.remove_specks(img, min_px=30)
     assert (out[10:90, 10:16] == 0).all()
     assert (out[50:52, 50:52] == 255).all()
+
+
+def test_wall_mask_keeps_walls_and_drops_thin_ink():
+    img = np.full((420, 500), 255, np.uint8)
+    img[20:380, 20:480] = 0
+    img[60:340, 60:440] = 255  # 40-px ring
+    img[60:340, 200:212] = 0  # 12-px partition
+    img[60:340, 300:305] = 0  # 5-px partition
+    img[400:402, 20:480] = 0  # 2-px dimension line
+    for x in range(90, 170, 12):
+        img[100:120, x : x + 3] = 0  # 3-px text strokes
+    img[150:165, 350:365] = 0
+    img[155:160, 355:360] = 255  # 15×15 glyph, 5-px stroke
+    walls = img.copy()
+    walls[60:340, 300:305] = walls[400:402] = walls[100:120, 90:170] = walls[150:165, 350:365] = 255
+    junctions = np.zeros(img.shape, bool)
+    junctions[[*range(60, 66), *range(334, 340)], 300:305] = True  # the 5-px partition may leave nubs on the ring
+
+    out = preprocess.wall_mask(img, min_px=6, min_area=300)
+    assert set(np.unique(out)) <= {0, 255}
+    assert (out[(walls == 255) & ~junctions] == 255).all()  # thin partition, line, text, glyph gone
+    assert np.count_nonzero(out[walls == 0] == 0) / np.count_nonzero(walls == 0) > 0.99
+
+
+def test_wall_mask_drops_bold_glyphs():
+    img = np.full((200, 200), 255, np.uint8)
+    img[20:40, 20:28] = img[32:40, 20:40] = 0  # 8-px-stroke "L" glyph, 256 px
+    img[60:160, 100:108] = 0  # 8-px wall stub, 800 px
+    out = preprocess.wall_mask(img, min_px=6, min_area=300)
+    assert (out[20:40, 20:40] == 255).all()
+    assert np.count_nonzero(out[60:160, 100:108] == 0) > 0.95 * 800  # opening only rounds its corners
+
+
+@pytest.mark.parametrize(("cut", "expect_ok"), [(False, True), (True, False)], ids=["door-gap", "split"])
+def test_outline_cover(cut: bool, expect_ok: bool):
+    img = np.full((460, 600), 255, np.uint8)
+    img[80:380, 100:500] = 0
+    img[90:370, 110:490] = 255
+    img[370:380, 280:330] = 255  # door
+    if cut:
+        img[:, 290:310] = 255  # 20-px gap through both long walls
+    assert (preprocess.outline_cover(img) >= preprocess.MIN_OUTLINE_COVER) == expect_ok
 
 
 def test_plans_rejects_degenerate_calibration(tmp_path):

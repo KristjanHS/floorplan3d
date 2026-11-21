@@ -37,7 +37,10 @@ def preprocess_inputs(floor: plans.Floor) -> dict:
         "pdf": str(floor.pdf),
         "pdf_size": st and st.st_size,
         "pdf_mtime_ns": st and st.st_mtime_ns,
-        **{k: getattr(floor, k) for k in ("page", "dpi", "max_side", "min_speck_px", "binarize")},
+        **{
+            k: getattr(floor, k)
+            for k in ("page", "dpi", "max_side", "min_speck_px", "binarize", "wall_min_px", "wall_min_area")
+        },
     }
 
 

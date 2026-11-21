@@ -9,6 +9,7 @@ import pytest
 
 import convert
 import plans
+import preprocess
 import sandbox
 
 PROBE = plans.ROOT / "scripts" / "ftb_probe.py"
@@ -114,6 +115,36 @@ def test_second_block_outside_the_largest_contour_is_dropped(tmp_path: Path):
     assert res["stages"]["S3"]["ratio"][0] < 0.90
     assert res["verdict"] == "S4"
     assert res["stages"]["S4"]["ratio"][0] < 0.90
+
+
+def l_plan() -> np.ndarray:
+    """L-shaped building, no dimension lines: as the wall mask leaves it."""
+    img = np.full((640, 620), 255, np.uint8)
+    ring(img, 100, 80, 500, 380, gap=(280, 330))
+    ring(img, 100, 370, 300, 560, gap=(180, 230))
+    return img
+
+
+L_ROOMS = ["r1=109.5,230:489.5,230", "r2=109.5,470:289.5,470"]
+
+
+@pytest.mark.parametrize("framed", [True, False], ids=["frame", "no-frame"])
+def test_outline_frame_keeps_the_outer_walls(tmp_path: Path, framed: bool):
+    img = preprocess.outline_frame(l_plan()) if framed else l_plan()
+    res = run_probe(tmp_path, img, L_ROOMS)
+    if framed:
+        assert res["verdict"] is None, res["reason"]
+        assert all(f["present"] for t in res["targets"] for f in t["faces"]["S4"])
+    else:
+        assert (res["verdict"], res["reason"]) == ("S4", "no walls left")
+
+
+def test_outline_frame_joins_separate_blocks(tmp_path: Path):
+    img = np.full((460, 620), 255, np.uint8)
+    ring(img, 60, 60, 360, 400, gap=(180, 230))
+    ring(img, 420, 60, 560, 200, gap=(470, 510))  # 60 px apart: the grown silhouettes stay separate
+    res = run_probe(tmp_path, preprocess.outline_frame(img), [])
+    assert res["verdict"] is None, res["reason"]  # one frame per block: the largest contour drops the other
 
 
 def test_thin_partition_erased_by_wall_filter_loses_its_face_at_s1(tmp_path: Path):

@@ -158,7 +158,8 @@ def converted(tmp_path_factory: pytest.TempPathFactory) -> Iterator[plans.Floor]
         page = doc.new_page(width=w * 72 / 150, height=h * 72 / 150)
         page.insert_image(page.rect, filename=str(EXAMPLE))
         doc.save(pdf)
-    floor = plans.Floor(name="ex", pdf=pdf, wall_height_m=WALL_H, work=tmp / "work", output=tmp / "out")
+    # max_side 1000 keeps the KLK/CAL constants (picked at downscale 0.793) valid.
+    floor = plans.Floor(name="ex", pdf=pdf, wall_height_m=WALL_H, max_side=1000, work=tmp / "work", output=tmp / "out")
     preprocess.preprocess(floor)
     convert.convert(floor, os.path.realpath(blender))
     yield floor

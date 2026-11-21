@@ -38,8 +38,10 @@ class Floor:
     calibration: Calibration | None = None
     wall_height_m: float = 2.6
     dpi: int = 150
-    max_side: int = 1000
+    max_side: int = 1800
     min_speck_px: int = 30
+    wall_min_px: int = 6  # wall mask: keep strokes at least this wide (render px); 0 = no mask, no outline frame
+    wall_min_area: int = 300  # wall mask: drop kept components smaller than this (render px²)
     binarize: str = "otsu"
     work: Path = WORK
     output: Path = OUTPUT
@@ -107,7 +109,10 @@ def load(path: Path) -> list[Floor]:
         raw = dict(raw)
         raw["pdf"] = (path.parent / raw["pdf"]).resolve()
         raw["calibration"] = _calibration(raw.get("calibration"))
-        floors.append(Floor(**raw))
+        floor = Floor(**raw)
+        if floor.wall_min_px < 0 or floor.wall_min_area < 0:
+            raise ValueError(f"{floor.name}: wall_min_px and wall_min_area must be >= 0")
+        floors.append(floor)
     names = [f.name for f in floors]
     if len(set(names)) != len(names):
         raise ValueError(f"duplicate floor names in {path}: {names}")
