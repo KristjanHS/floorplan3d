@@ -10,7 +10,7 @@ Status: bootstrap only — build plan in `docs/plans/FLOORPLAN_TO_3D_SETUP.md`.
 `homes/`, `sh3d_src/` and `backups/` are local, untracked here.
 
 1. Edit in the SweetHome3D GUI, save to `homes/<name>.sh3d`, **close it**.
-2. `make pull NAME=<name>` → `git -C sh3d_src add -A && git -C sh3d_src commit -m "pull: GUI edits"`.
+2. `make pull NAME=<name>` → `git -C sh3d_src add -A <name> && git -C sh3d_src commit -m "pull: GUI edits"`.
 3. Ask Claude Code for an edit (move a piece, paint a wall, add furniture).
 4. Claude Code: `make inspect NAME=<name>` → edit `sh3d_src/<name>/Home.xml` → `make validate NAME=<name>` →
    `make preview NAME=<name>` (reads `work/sh3d/<name>/preview.png`) → commit in `sh3d_src`.
