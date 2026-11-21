@@ -7,7 +7,7 @@ BLENDER ?= blender
 UPSTREAM := vendor/FloorplanToBlender3d
 UT := work/upstream-test
 
-.PHONY: help sync check lint fmt test audit push-gate setup-hooks pre-commit upstream-test preprocess convert
+.PHONY: help sync check lint fmt test audit push-gate setup-hooks pre-commit upstream-test preprocess convert export
 
 help:
 	@echo "make sync     - uv sync (locked, all groups) + uv pip check"
@@ -17,6 +17,7 @@ help:
 	@echo "make test     - pytest (skips while tests/ is absent)"
 	@echo "make preprocess - PDFs in plans.yaml -> work/<floor>.png + _grid.png + .json"
 	@echo "make convert    - sandboxed upstream run per floor -> work/<floor>/<floor>_raw.blend"
+	@echo "make export     - Blender: scale raw blend -> output/<floor>/ .blend .glb .obj previews + wall check"
 	@echo "make upstream-test - upstream's own tests, sandboxed (no display tests)"
 	@echo "make audit    - uv audit: known vulnerabilities in uv.lock"
 	@echo "make setup-hooks - install pre-commit (commit) + make check (push) git hooks"
@@ -49,6 +50,9 @@ preprocess:
 
 convert:
 	uv run python scripts/convert.py --blender $(BLENDER)
+
+export:
+	uv run python scripts/export.py --blender $(BLENDER)
 
 # Upstream tests write ../Configs relative to Testing/, so run a scratch copy; Images/ is linked read-only.
 upstream-test:
