@@ -1,9 +1,12 @@
-exclude: ^vendor/
+exclude: ^vendor(/|$)
+default_stages: [pre-commit]
+default_install_hook_types: [pre-commit, pre-push]
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
       - id: check-added-large-files
+        args: [--maxkb=200]
       - id: check-yaml
       - id: end-of-file-fixer
       - id: trailing-whitespace
@@ -21,9 +24,16 @@ repos:
         entry: uv run --locked ruff format --force-exclude
         language: system
         types: [python]
-      - id: make-check
-        name: make check
-        entry: make check
+      # Private plans/renders belong in the gitignored input/ work/ output/, never in git.
+      - id: no-private-binaries
+        name: no PDFs/images/.blend outside docs/
+        entry: PDFs, images and .blend files belong in input/, work/ or output/ (gitignored)
+        language: fail
+        files: '\.(pdf|png|jpe?g|tiff?|bmp|webp|blend|blend1|dxf|svg)$'
+        exclude: ^docs/
+      - id: push-gate
+        name: make push-gate
+        entry: make push-gate
         language: system
         pass_filenames: false
         always_run: true

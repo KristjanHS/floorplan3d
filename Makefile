@@ -3,7 +3,7 @@ export UV_LOCKED := 1
 # Empty tree: diff --check against it covers every tracked file, committed or not.
 EMPTY_TREE := 4b825dc642cb6eb9a060e54bf8d69288fbee4904
 
-.PHONY: help sync check lint fmt test audit setup-hooks pre-commit
+.PHONY: help sync check lint fmt test audit push-gate setup-hooks pre-commit
 
 help:
 	@echo "make sync     - uv sync (locked, all groups) + uv pip check"
@@ -14,6 +14,7 @@ help:
 	@echo "make audit    - uv audit: known vulnerabilities in uv.lock"
 	@echo "make setup-hooks - install pre-commit (commit) + make check (push) git hooks"
 	@echo "make pre-commit  - run all commit-stage hooks on all files"
+	@echo "make push-gate   - pre-push: clean tree + pushed ref == HEAD, then check"
 	@echo "make syncwt|commit|commitwt - shared worktree targets (~/.config/make/worktree.mk)"
 
 sync:
@@ -39,8 +40,16 @@ test:
 audit:
 	uv audit
 
+# Pre-push gate. `check` reads the working tree, so require it to BE the pushed commit:
+# clean (untracked included) and the pushed ref == HEAD (PRE_COMMIT_TO_REF set by pre-commit).
+push-gate:
+	@test -z "$$(git status --porcelain)" || { echo "push-gate: commit or stash first — check gates the working tree" >&2; exit 1; }
+	@test -z "$${PRE_COMMIT_TO_REF:-}" || test "$$(git rev-parse "$$PRE_COMMIT_TO_REF")" = "$$(git rev-parse HEAD)" \
+	  || { echo "push-gate: push the checked-out branch, or check it out first" >&2; exit 1; }
+	@$(MAKE) --no-print-directory check
+
 setup-hooks:
-	uv run pre-commit install --hook-type pre-commit --hook-type pre-push
+	uv run pre-commit install
 
 pre-commit:
 	uv run pre-commit run --all-files
