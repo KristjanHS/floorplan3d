@@ -2,7 +2,6 @@
 paths:
   - "docs/**/*.md"
   - "**/CLAUDE.md"
-  - "docs/plans/**/*.md"
   - ".claude/rules/**/*.md"
 last_verified: 2026-11-21
 ---
@@ -14,7 +13,6 @@ last_verified: 2026-11-21
 - Multi-stage split (one file per stage) only after ≥ 2 stages have already shipped and a handoff is actually needed. Do not split speculatively at design time.
 
 ## Plan archival
-- Plans representing a single shipped session (≤ 1 day end-to-end, all commits reference the plan path or feature name): `git rm`, don't `git mv`. Git log is the audit trail; the archived md is a second copy. Archive only plans whose design rationale isn't fully captured in commit messages.
 
 Shipped plans left in `docs/plans/` masquerade as active work in later plan surveys. When a plan-survey step finds a plan fully shipped, `git mv` it into an `archive/` sibling the same session — don't just note shipped status and move on.
 
@@ -27,7 +25,7 @@ If the plan has working-tree amendments (e.g. a §0 resolution note added in the
 When a multi-stage split IS warranted: one file per stage under `docs/plans/`, each sized to fit a 200k-token session context. Write `<date>-<feature>-stage-A.md`, `-stage-B.md`, … plus a short `<date>-<feature>-overview.md` index if useful; cross-reference between files. Single-stage plans stay in one file (Design + Plan + Corrections sections in place). Archive rule (`git mv` to `archive/` after ship) applies per-stage file. No `-v2-` / `-enhancements-` version siblings — amend in place with a changelog entry inside the same stage file.
 
 ## Doc hygiene
-Session-generated audits, analyses, and reports go in an `archive/` or `analysis/` subfolder — not in the reference-doc root. The `docs/` root is for trigger-indexed reference docs listed in `CLAUDE.md`. Don't drop one-off session outputs into the reference tier.
+Session-generated audits, analyses, and reports go in an `analysis/` subfolder — not in the reference-doc root. The `docs/` root is for trigger-indexed reference docs listed in `CLAUDE.md`. Don't drop one-off session outputs into the reference tier.
 
 Migration tasks (moving content out of a module/subsystem): before committing, grep the old identifier across `docs/`, `CLAUDE.md`, and `.claude/rules/`. Additive migrations leave stale prose in downstream docs the migrator never opened.
 
@@ -42,7 +40,3 @@ Test deletes go where the prod-code removal lands, not where the topic finishes 
 ## Cross-plan conflict check (overlapping campaigns)
 
 When a plan finding targets code a *different* recently-shipped plan rewrote, `git log --oneline -20 -- <file>` the touched symbols BEFORE implementing — a later finding can silently reverse a deliberate earlier decision. If a finding reverses shipped work, surface the conflict and defer to the user — don't steamroll, don't silently skip.
-
-## Feature-removal grep
-
-Before finalizing a removal design, sweep `raise.*Error.*"`, `"""` docstrings, and `\.value\s*=\s*"` literals — see `~/.claude/references/pre-ship-sweeps.md` § "Grep user-facing prose when designing a feature removal".
