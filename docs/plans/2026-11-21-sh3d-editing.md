@@ -133,13 +133,10 @@ Refactor-first: skipped — `scripts/sh3d.py` is a new standalone module; no exi
 - Done: gate green after fixes.
 
 ### Stage 5.2 live e2e [USER]
-- [USER] save a GUI home as `homes/x.sh3d`, close SH3D; Claude: `make pull NAME=x` → commit in `sh3d_src`.
-- Round-trip: `make push NAME=x` with no edits → [USER] opens the printed path; confirms the home looks identical.
-- Edit: move one furniture item +50 cm in `x` via Home.xml → `make validate NAME=x`, `make preview NAME=x`; Claude reads the PNG.
-- Then `make push NAME=x` → [USER] confirms the 50 cm move in the GUI.
-- Conflict: [USER] re-saves in GUI (or `touch`+byte change) after pull → `make push NAME=x` exits non-zero, no backup written.
-- [USER] check (unverified): does Windows open `homes\x.sh3d` via a symlinked `homes/` path under `\\wsl$\…`, or only the printed realpath?
-- Result → NOTES.md `## SweetHome3D format` one line; README names the path that works.
+- Ruled 2026-11-21: edit→push→GUI-reopen leg proven live via the realpath under `\\wsl$\…`; rest runs on scratch `homes/x.sh3d`.
+- Round-trip: `make pull NAME=x` → `make push NAME=x` no edits → pushed Home.xml parses equal to the source's.
+- Conflict: byte change to `homes/x.sh3d` after pull → `make push NAME=x` exits non-zero, `backups/` unchanged.
+- A symlinked `homes/` path under `\\wsl$`: untested → open item in 5.3; README names the realpath `make push` prints.
 
 ### Stage 5.3 honest report
 - List unverified items left (read order, units, DTD path, symlink via `\\wsl$`) — each either cited in NOTES.md or flagged open.
