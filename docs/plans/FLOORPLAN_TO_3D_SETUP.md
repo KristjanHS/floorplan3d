@@ -1,0 +1,71 @@
+# Task: set up a repo that turns my scanned floor-plan PDFs into 3D models with FloorplanToBlender3d
+
+You are Claude Code. Build a small, reproducible pipeline repo. Work step by step, verify each step, and stop and ask me if a decision is irreversible or a check fails twice.
+
+## Goal
+Input: scanned (raster) floor-plan PDFs, one floor per page or file.
+Output per floor: `.blend` file + `.glb` + `.obj` (for Sweet Home 3D / other tools) + a PNG preview render, **scaled to real metres**.
+
+## Ground rules
+- Upstream: https://github.com/grebtsew/FloorplanToBlender3d (GPL-3.0). Do **not** copy its code into my repo; add it as a git submodule pinned to a specific commit.
+- My floor plans are private: `input/` and `output/` must be in `.gitignore`. Never commit or upload them anywhere.
+- Python-first. Use a venv (`uv` if available, otherwise `python -m venv`). Pin dependencies.
+- Target OS: Linux (also runs under WSL). Blender runs headless (`blender -b`).
+- Blender: pinned official portable tarball in `~/.local/opt/`, symlinked to `~/.local/bin/blender`, no sudo; Makefile `BLENDER ?= blender`; version in `NOTES.md`, step 2 decides it.
+- License: this repo MIT (`LICENSE`); upstream submodule stays GPL-3.0 — README says so.
+- Don't guess upstream behaviour — **read its source** to confirm anything below marked VERIFY.
+
+## Known facts / things to VERIFY in upstream
+- README states: Blender > 2.93, Python >= 3.8, `pip install -r requirements.txt`.
+- VERIFY entry point: README mentions `create_blender_project_from_floorplan.py`, but the repo root may have `main.py` instead.
+- VERIFY prompts: the script is interactive ("Follow instructions"). Find what it asks and make it run non-interactively (CLI args, config file, or stdin feeding) — prefer config over patching upstream.
+- First run creates `system.ini` and `Configs/default.ini`. VERIFY the keys (Blender path, image path, transform/scale) by reading the code.
+- Output lands in `./target/floorplan.blender` (VERIFY actual name/extension).
+- Detection works best on **small** images — downscale large ones.
+- Pinned old deps (e.g. opencv-python) may fail to install on current Python; if so, bump the minimal version needed and record why in `NOTES.md`.
+- Fallback if local install is painful: upstream Docker image `grebtsew/floorplan-to-blender` (`docker-compose run ftb`).
+
+## Repo layout
+```
+floorplan3d/
+  README.md          # how to run, for me (short)
+  NOTES.md           # decisions, upstream quirks found, version bumps
+  Makefile           # make setup | make preprocess | make convert | make export | make all
+  plans.yaml         # per-floor settings (see below)
+  input/             # my PDFs (gitignored)
+  work/              # intermediate PNGs (gitignored)
+  output/            # results (gitignored)
+  vendor/FloorplanToBlender3d/   # git submodule
+  scripts/
+    preprocess.py    # PDF -> clean, downscaled PNG
+    convert.py       # runs upstream non-interactively per floor
+    export_blend.py  # run inside Blender: scale, export .glb/.obj, render preview
+```
+
+## plans.yaml
+```yaml
+floors:
+  - name: ground
+    pdf: input/ground.pdf
+    page: 1
+    # scale calibration: two pixel points on the cleaned PNG + real distance
+    calibration: { p1: [x, y], p2: [x, y], metres: 4.20 }
+    wall_height_m: 2.6
+```
+If calibration is missing, still run, but label the output `UNSCALED` and tell me.
+
+## Steps
+1. `git init`, create layout, `.gitignore`, add submodule, set up venv, install upstream requirements + `pymupdf`, `opencv-python`, `pyyaml`. Check `blender --version`; if missing, tell me how to install it (don't install system packages without asking).
+2. Run upstream's own example/test (`Testing/`, `pytest`) once to confirm the install works before touching my files.
+3. `preprocess.py`: render PDF page with PyMuPDF at ~150 DPI → grayscale → deskew → binarize (Otsu/adaptive) → remove small specks → downscale so the long side is ≤ ~1000 px (tune if detection fails). Save the PNG plus the scale factor used, so calibration points stay valid.
+4. `convert.py`: for each floor, call upstream non-interactively; move result to `output/<name>/<name>.blend`.
+5. `export_blend.py` (via `blender -b <file> --python scripts/export_blend.py -- ...`): apply metres-per-pixel scale from calibration, set wall height, export `.glb` and `.obj`, render a top-down + perspective PNG preview.
+6. `make all` runs everything end-to-end.
+
+## Verification (required before saying "done")
+- Look at each preview PNG yourself and compare with the source plan image: walls present, no big gaps, rooms not merged.
+- Check one known wall length in the exported model against `calibration.metres` (±3%).
+- Report per floor: OK / problems seen / suggested fix (e.g. different downscale, stronger cleanup, manual erase of text/dimension lines).
+
+## Expect and report honestly
+Automatic detection on scanned plans is fragile (text, dimension lines, furniture symbols confuse it). Doors/windows may be wrong or missing. The output is a **starting shell** to refine (in Blender or by tracing in Sweet Home 3D), not a finished model.

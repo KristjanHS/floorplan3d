@@ -1,0 +1,8 @@
+# private floor plans + derived artefacts — never commit
+/input/
+/work/
+/output/
+# local env
+.venv/
+__pycache__/
+*.blend1
