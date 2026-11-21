@@ -75,5 +75,5 @@ Automatic detection on scanned plans is fragile (text, dimension lines, furnitur
 ## Remaining (steps 1–5 shipped `407f4b8`..`81c0a10`)
 - Floors: the page → floor mapping lives in the gitignored `plans.yaml`; prefer the 600 dpi source; rafters/roof pages are not floors.
 - Step 6: `make all` = preprocess → convert → export; `convert.py` copies the PNG into its scratch dir (bwrap tmpfs hides `/tmp`).
-- Verification per floor: calibration p1/p2/metres owed by the user (from `work/<floor>_grid.png`); until then run UNSCALED, eyeball previews, report per floor.
+- Verification per floor: scale-check against measured interior dimensions.
 - Upstream drops outer wall contours (fixture x extent −24.8 %): investigate before trusting real-floor shells; record in NOTES.md.
