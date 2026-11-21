@@ -56,8 +56,11 @@ def convert(floor: plans.Floor, blender: str) -> Path:
     scratch.mkdir(parents=True)
     # Door/window templates load from CWD-relative Images/ (const.DOOR_MODEL); link it read-only.
     (scratch / "Images").symlink_to(UPSTREAM / "Images")
+    # bwrap mounts a tmpfs over /tmp, so a work dir there is invisible inside; the scratch bind is not.
+    image = scratch / floor.png.name
+    shutil.copyfile(floor.png, image)
     ini = scratch / "floor.ini"
-    write_config(ini, floor.png)
+    write_config(ini, image)
 
     env = {"MPLBACKEND": "Agg"}
     python = str(plans.ROOT / ".venv" / "bin" / "python")

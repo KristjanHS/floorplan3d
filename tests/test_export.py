@@ -1,7 +1,6 @@
 import json
 import os
 import shutil
-import tempfile
 from collections.abc import Iterator
 from dataclasses import replace
 from pathlib import Path
@@ -41,9 +40,8 @@ def raw_x_units(floor: plans.Floor) -> float:
 
 
 @pytest.fixture(scope="module")
-def converted() -> Iterator[plans.Floor]:
-    plans.WORK.mkdir(exist_ok=True)
-    tmp = Path(tempfile.mkdtemp(prefix="pytest-e2e-", dir=plans.WORK))  # convert's bwrap mounts a tmpfs over /tmp
+def converted(tmp_path_factory: pytest.TempPathFactory) -> Iterator[plans.Floor]:
+    tmp = tmp_path_factory.mktemp("e2e")  # under /tmp: convert must copy the PNG past bwrap's /tmp tmpfs
     img = cv2.imread(str(EXAMPLE), cv2.IMREAD_GRAYSCALE)
     assert img is not None
     h, w = img.shape
@@ -57,7 +55,6 @@ def converted() -> Iterator[plans.Floor]:
     assert BLENDER is not None
     convert.convert(floor, os.path.realpath(BLENDER))
     yield floor
-    shutil.rmtree(tmp)
 
 
 def outputs(floor: plans.Floor) -> list[Path]:

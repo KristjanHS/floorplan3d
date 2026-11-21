@@ -4,10 +4,11 @@ export UV_LOCKED := 1
 EMPTY_TREE := 4b825dc642cb6eb9a060e54bf8d69288fbee4904
 
 BLENDER ?= blender
+PLANS ?= plans.yaml
 UPSTREAM := vendor/FloorplanToBlender3d
 UT := work/upstream-test
 
-.PHONY: help sync check whitespace lint fmt test audit push-gate setup-hooks pre-commit upstream-test preprocess convert export
+.PHONY: help sync check whitespace lint fmt test audit push-gate setup-hooks pre-commit upstream-test preprocess convert export models
 
 help:
 	@echo "make sync     - uv sync (locked, all groups) + uv pip check"
@@ -15,6 +16,7 @@ help:
 	@echo "make lint     - ruff check + ruff format --check + pyright"
 	@echo "make fmt      - ruff check --fix + ruff format (rewrites files)"
 	@echo "make test     - pytest (skips while tests/ is absent)"
+	@echo "make models     - preprocess -> convert -> export, per floor, only steps whose inputs changed"
 	@echo "make preprocess - PDFs in plans.yaml -> work/<floor>.png + _grid.png + .json"
 	@echo "make convert    - sandboxed upstream run per floor -> work/<floor>/<floor>_raw.blend"
 	@echo "make export     - Blender: scale raw blend -> output/<floor>/ .blend .glb .obj previews + wall check"
@@ -55,6 +57,12 @@ preprocess:
 
 convert:
 	uv run python scripts/convert.py --blender $(BLENDER)
+
+# -k: a failing floor never stops the others; the summary's exit code reports it.
+models:
+	@uv run python scripts/pipeline_mk.py --plans $(PLANS) --out work/pipeline.mk
+	@$(MAKE) --no-print-directory -k -f work/pipeline.mk floors BLENDER='$(BLENDER)'; \
+	  uv run python scripts/pipeline_mk.py --plans $(PLANS) --summary
 
 export:
 	uv run python scripts/export.py --blender $(BLENDER)

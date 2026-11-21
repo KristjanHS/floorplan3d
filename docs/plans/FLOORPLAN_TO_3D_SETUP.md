@@ -31,7 +31,7 @@ Output per floor: `.blend` file + `.glb` + `.obj` (for Sweet Home 3D / other too
 floorplan3d/
   README.md          # how to run, for me (short)
   NOTES.md           # decisions, upstream quirks found, version bumps
-  Makefile           # make setup | make preprocess | make convert | make export | make all
+  Makefile           # make setup | make preprocess | make convert | make export | make models
   plans.yaml         # per-floor settings (see below)
   input/             # my PDFs (gitignored)
   work/              # intermediate PNGs (gitignored)
@@ -61,7 +61,7 @@ If calibration is missing, still run, but label the output `UNSCALED` and tell m
 3. `preprocess.py`: render PDF page with PyMuPDF at ~150 DPI → grayscale → deskew → binarize (Otsu/adaptive) → remove small specks → downscale so the long side is ≤ ~1000 px (tune if detection fails). Save the PNG plus the scale factor used, so calibration points stay valid, and `<name>_grid.png` with pixel coordinates labelled every 100 px for picking calibration points.
 4. `convert.py`: for each floor, call upstream non-interactively, applying fixes F2–F4 in `docs/security-review-FloorplanToBlender3d.md`; keep the unscaled result in `work/<name>/<name>_raw.blend` (export rescales it into `output/<name>/<name>.blend`, so re-runs never double-scale).
 5. `export_blend.py` (via `blender -b <file> --python scripts/export_blend.py -- ...`): apply metres-per-pixel scale from calibration, set wall height, export `.glb` and `.obj`, render a top-down + perspective PNG preview.
-6. `make all` runs everything end-to-end.
+6. `make models` runs everything end-to-end, per floor, rerunning only steps whose inputs changed.
 
 ## Verification (required before saying "done")
 - Done = both: pytest e2e on a fixture PDF built from upstream `Images/Examples/example.png`, and the user's real PDFs in `input/` (dropped in at step 3).
@@ -72,8 +72,7 @@ If calibration is missing, still run, but label the output `UNSCALED` and tell m
 ## Expect and report honestly
 Automatic detection on scanned plans is fragile (text, dimension lines, furniture symbols confuse it). Doors/windows may be wrong or missing. The output is a **starting shell** to refine (in Blender or by tracing in Sweet Home 3D), not a finished model.
 
-## Remaining (steps 1–5 shipped `407f4b8`..`81c0a10`)
+## Remaining (steps 1–6 shipped from `407f4b8`)
 - Floors: the page → floor mapping lives in the gitignored `plans.yaml`; prefer the 600 dpi source; rafters/roof pages are not floors.
-- Step 6: `make all` = preprocess → convert → export; `convert.py` copies the PNG into its scratch dir (bwrap tmpfs hides `/tmp`).
 - Verification per floor: scale-check against measured interior dimensions.
 - Upstream drops outer wall contours (fixture x extent −24.8 %): investigate before trusting real-floor shells; record in NOTES.md.
