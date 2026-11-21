@@ -140,6 +140,10 @@ def main() -> None:
     lo, hi = bounds(meshes)
     size = hi - lo
 
+    for ob in meshes:
+        if groups[ob.name]:
+            ob["group"] = groups[ob.name]  # bake dropped the parent chain group_of reads; measure.py needs it
+
     a.out_dir.mkdir(parents=True, exist_ok=True)
     base = a.out_dir / a.name
     bpy.ops.wm.save_as_mainfile(filepath=str(base.with_name(a.name + ".blend")), check_existing=False)

@@ -4,14 +4,27 @@ The gate captures pytest's output (shown only on failure), so progress goes stra
 terminal, pytest-style: each file's name as it starts, then pytest's own letters per test as it
 finishes. A test still running after SLOW_S gets its own line with a live elapsed counter and,
 once done, pytest's verbose words. pytest's summary stats line feeds the gate's ok line.
+
+Also the shared Blender-backed `converted` fixture (upstream's example plan, converted once per session).
 """
 
 import os
+import shutil
 import threading
 import time
+from collections.abc import Iterator
 from typing import IO
 
+import cv2
+import pymupdf
 import pytest
+
+import convert
+import plans
+import preprocess
+
+EXAMPLE = plans.ROOT / "vendor" / "FloorplanToBlender3d" / "Images" / "Examples" / "example.png"
+WALL_H = 2.6
 
 SLOW_S = 2.0
 TICK_S = 0.5
@@ -128,3 +141,24 @@ def pytest_unconfigure(config: pytest.Config) -> None:
             _tty.write("\n")
         _tty.close()
         _tty = None
+
+
+@pytest.fixture(scope="session")
+def converted(tmp_path_factory: pytest.TempPathFactory) -> Iterator[plans.Floor]:
+    blender = shutil.which("blender")
+    if blender is None:
+        pytest.skip("blender not on PATH")
+    tmp = tmp_path_factory.mktemp("e2e")
+    assert tmp.parts[1] == "tmp"  # convert must copy the PNG past bwrap's /tmp tmpfs; this guards that
+    img = cv2.imread(str(EXAMPLE), cv2.IMREAD_GRAYSCALE)
+    assert img is not None
+    h, w = img.shape
+    pdf = tmp / "example.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page(width=w * 72 / 150, height=h * 72 / 150)
+        page.insert_image(page.rect, filename=str(EXAMPLE))
+        doc.save(pdf)
+    floor = plans.Floor(name="ex", pdf=pdf, wall_height_m=WALL_H, work=tmp / "work", output=tmp / "out")
+    preprocess.preprocess(floor)
+    convert.convert(floor, os.path.realpath(blender))
+    yield floor
