@@ -75,4 +75,5 @@ Automatic detection on scanned plans is fragile (text, dimension lines, furnitur
 ## Remaining (steps 1–6 shipped from `407f4b8`)
 - Floors: the page → floor mapping lives in the gitignored `plans.yaml`; prefer the 600 dpi source; rafters/roof pages are not floors.
 - Verification per floor: scale-check against measured interior dimensions.
-- Upstream drops outer wall contours (fixture x extent −24.8 %): investigate before trusting real-floor shells; record in NOTES.md.
+- Outer-wall loss: wall mask + outline frame + `input/<floor>_walls.png` override shipped; thin double-line walls defeat
+  the mask (NOTES.md) → trace such sheets in SweetHome3D (`SWEETHOME3D_EDITING_SETUP.md`).
