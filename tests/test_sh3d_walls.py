@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import cv2
 import numpy as np
 import pytest
 from lxml import etree
@@ -47,3 +48,41 @@ def test_level_without_bg_skipped_or_falls_back_to_home(tmp_path: Path) -> None:
 def test_home_without_levels_uses_home_bg(tmp_path: Path) -> None:
     home = etree.fromstring(f"<home version='7400' name='t'>{BG.format(img='h', origin='')}</home>")
     assert [(b.level_id, b.image.name) for b in sh3d_walls.level_backgrounds(home, tmp_path)] == [(None, "h")]
+
+
+WALL = "<wall id='{id}' level='L0' xStart='40' yStart='{y}' xEnd='400' yEnd='{y}' thickness='20'>{prop}</wall>"
+
+
+def drawn_plan() -> np.ndarray:
+    """White 300x300 px at 2 cm/px with both faces of a 20 cm wall at y=100 cm drawn in black."""
+    img = np.full((300, 300), 255, np.uint8)
+    for v in (45, 55):
+        cv2.line(img, (20, v), (200, v), 0, 1)
+    return img
+
+
+def wall(y: float) -> sh3d_walls.TracedWall:
+    return sh3d_walls.TracedWall("w", "L0", (40, y), (400, y), 20)
+
+
+def test_ink_rate_separates_fit_from_shift(tmp_path: Path) -> None:
+    (bg,) = sh3d_walls.level_backgrounds(root(l0_bg=BG.format(img="0", origin="")), tmp_path)
+    img = drawn_plan()
+    assert sh3d_walls.ink_rate(img, sh3d_walls.faces_px(wall(100), bg)) >= 0.8
+    assert sh3d_walls.ink_rate(img, sh3d_walls.faces_px(wall(150), bg)) < 0.3
+
+
+def test_overlay_skips_auto_walls_and_names_trace(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    src, work = tmp_path / "src", tmp_path / "work"
+    (src / "x").mkdir(parents=True)
+    work.mkdir()
+    (src / "x" / "0").write_bytes(cv2.imencode(".png", drawn_plan())[1].tobytes())
+    (work / "a_trace.png").write_bytes((src / "x" / "0").read_bytes())
+    auto = f"<property name='{sh3d_walls.AUTO_PROP}' value='s'/>"
+    walls = WALL.format(id="w1", y=100, prop="") + WALL.format(id="auto-1", y=150, prop=auto)
+    home = HOME.format(home_bg="", l0_bg=BG.format(img="0", origin="")).replace("</home>", walls + "</home>")
+    (src / "x" / "Home.xml").write_text(home)
+    assert sh3d_walls.main(["--src", str(src), "--work", str(work), "overlay", "x"]) == 0
+    assert capsys.readouterr().out.startswith("L0: 1 walls, ink 1.00, image = a_trace.png")
+    out = cv2.imread(str(work / "walls" / "x-L0.png"))
+    assert out is not None and out.shape == (300, 300, 3)
