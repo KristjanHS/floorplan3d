@@ -62,9 +62,11 @@ Refactor-first: skipped — `scripts/sh3d.py` is a new standalone module; no exi
 - `etree.DTD(dtd).validate(root)`; report `dtd.error_log` lines.
 - Refs: every `CONTENT_ATTRS` value without `://` and not `jar:` must exist under `sh3d_src/<name>/`.
 - Numbers: any attr value in `{NaN, -NaN, Infinity, -Infinity}` → error; `NUMERIC_ATTRS` empty or non-float → error.
+- `NUMERIC_ATTRS` is a pinned literal frozenset (ruled 2026-11-21); a drift test re-derives it from the source zip, skipped when absent.
 - All errors collected, printed one per line, exit 1; clean → `validate: ok <name>`.
 - Tests use a minimal synthetic DTD written in `tmp_path` covering the fixture elements; never the real DTD.
 - Tests: ok fixture passes; missing resource ref fails; `x="NaN"` fails; `width=""` fails; malformed XML fails; missing DTD fails with message.
+- Tests (`dtd`, synthetic zip in `tmp_path`): extract + 3 patches loads; missing zip names the curl; unloadable DTD errors.
 - Verify: Stage 2.1 command. Done: green; commit `feat(sh3d): validate — DTD, resource refs, NaN/empty numbers`.
 
 ### Stage 2.3 push

@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 import zipfile
 from pathlib import Path
@@ -117,3 +118,136 @@ def test_pull_refuses_unsafe_entry(roots: sh3d.Roots, capsys: pytest.CaptureFixt
     assert run(roots, "pull", "x") == 1
     assert "unsafe zip entry" in capsys.readouterr().err
     assert not roots.tree("x").exists()
+
+
+SYNTH_DTD = """<!ELEMENT home (level*, (pieceOfFurniture | doorOrWindow)*, wall*, room*)>
+<!ATTLIST home version CDATA #IMPLIED wallHeight CDATA #IMPLIED>
+<!ELEMENT level EMPTY>
+<!ATTLIST level id ID #REQUIRED name CDATA #REQUIRED elevation CDATA #REQUIRED floorThickness CDATA #REQUIRED
+  height CDATA #REQUIRED>
+<!ENTITY % piece "id ID #REQUIRED level IDREF #IMPLIED name CDATA #REQUIRED model CDATA #IMPLIED
+  icon CDATA #IMPLIED x CDATA #REQUIRED y CDATA #REQUIRED angle CDATA #IMPLIED width CDATA #REQUIRED
+  depth CDATA #REQUIRED height CDATA #REQUIRED">
+<!ELEMENT pieceOfFurniture EMPTY>
+<!ATTLIST pieceOfFurniture %piece;>
+<!ELEMENT doorOrWindow EMPTY>
+<!ATTLIST doorOrWindow %piece;>
+<!ELEMENT wall EMPTY>
+<!ATTLIST wall id ID #REQUIRED level IDREF #IMPLIED xStart CDATA #REQUIRED yStart CDATA #REQUIRED
+  xEnd CDATA #REQUIRED yEnd CDATA #REQUIRED thickness CDATA #REQUIRED height CDATA #IMPLIED>
+<!ELEMENT room (point+)>
+<!ATTLIST room id ID #REQUIRED level IDREF #IMPLIED name CDATA #IMPLIED>
+<!ELEMENT point EMPTY>
+<!ATTLIST point x CDATA #REQUIRED y CDATA #REQUIRED>
+"""
+
+
+@pytest.fixture
+def pulled(roots: sh3d.Roots) -> Path:
+    roots.dtd.parent.mkdir(parents=True, exist_ok=True)
+    roots.dtd.write_text(SYNTH_DTD)
+    assert run(roots, "pull", "x") == 0
+    return roots.tree("x")
+
+
+def edit_xml(tree: Path, old: bytes, new: bytes) -> None:
+    xml = tree / "Home.xml"
+    data = xml.read_bytes()
+    assert old in data
+    xml.write_bytes(data.replace(old, new, 1))
+
+
+def test_validate_ok(roots: sh3d.Roots, pulled: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert run(roots, "validate", "x") == 0
+    assert "validate: ok x" in capsys.readouterr().out
+
+
+def test_validate_reports_dtd_violation(roots: sh3d.Roots, pulled: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    edit_xml(pulled, b"<wall ", b"<bogus/><wall ")
+    assert run(roots, "validate", "x") == 1
+    assert "DTD:" in capsys.readouterr().err
+
+
+def test_validate_missing_resource(roots: sh3d.Roots, pulled: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    (pulled / "1").unlink()
+    assert run(roots, "validate", "x") == 1
+    err = capsys.readouterr().err
+    assert "icon='1'" in err and "missing resource" in err
+
+
+def test_validate_collects_number_errors(roots: sh3d.Roots, pulled: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    edit_xml(pulled, b"x='100'", b"x='NaN'")
+    edit_xml(pulled, b"width='90'", b"width=''")
+    edit_xml(pulled, b"name='Living'", b"name='-Infinity'")  # ruled: any attribute, not only NUMERIC_ATTRS
+    assert run(roots, "validate", "x") == 1
+    err = capsys.readouterr().err
+    assert "3 error(s)" in err
+    assert "x='NaN'> non-finite" in err
+    assert "width=''> not a number" in err
+    assert "name='-Infinity'> non-finite" in err
+
+
+def test_validate_malformed_xml(roots: sh3d.Roots, pulled: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    edit_xml(pulled, b"</room>", b"</rom>")
+    assert run(roots, "validate", "x") == 1
+    assert "malformed XML" in capsys.readouterr().err
+
+
+def test_validate_missing_dtd(roots: sh3d.Roots, pulled: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    roots.dtd.unlink()
+    assert run(roots, "validate", "x") == 1
+    assert "DTD not found" in capsys.readouterr().err
+
+
+FAKE_JAVA = """package com.eteks.sweethome3d.io;
+/**
+ * SAX handler for Sweet Home 3D XML stream. Read home should respect the following DTD:<pre>
+ * &lt;!ELEMENT home (lightSourceMaterial*)>
+ * &lt;!ATTLIST home
+ *       renderer CADATA #IMPLIED
+ *       endMarkSize CDATA "10";>
+ *
+ * &lt;!ELEMENT lightSourceMaterial EMPTY>
+ * &lt;!ATTLIST lightSourceMaterial
+ *       name #REQUIRED>
+ * </pre>
+ * with <code>home</code> as root element.
+ */
+"""
+
+
+def write_src_zip(path: Path, java: str) -> None:
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr(sh3d.DTD_JAVA, java)
+
+
+def test_dtd_extracts_and_patches(roots: sh3d.Roots, tmp_path: Path) -> None:
+    src_zip = tmp_path / "src.zip"
+    write_src_zip(src_zip, FAKE_JAVA)
+    assert run(roots, "dtd", "--src-zip", str(src_zip)) == 0
+    dtd = roots.dtd.read_text()
+    assert dtd.startswith("<!ELEMENT home (lightSourceMaterial*)>\n<!ATTLIST home\n      renderer CDATA")
+    assert "name CDATA #REQUIRED>" in dtd and '"10";' not in dtd
+
+
+def test_dtd_missing_zip_names_curl(roots: sh3d.Roots, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert run(roots, "dtd", "--src-zip", str(tmp_path / "nope.zip")) == 1
+    assert "curl -sSL -o" in capsys.readouterr().err
+    assert not roots.dtd.exists()
+
+
+def test_dtd_refuses_unloadable(roots: sh3d.Roots, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    src_zip = tmp_path / "src.zip"
+    write_src_zip(src_zip, FAKE_JAVA.replace("EMPTY>", "BROKEN>"))
+    assert run(roots, "dtd", "--src-zip", str(src_zip)) == 1
+    assert "does not load" in capsys.readouterr().err
+    assert not roots.dtd.exists()
+
+
+def test_numeric_attrs_match_source() -> None:
+    if not sh3d.SRC_ZIP.is_file():
+        pytest.skip(f"{sh3d.SRC_ZIP} absent")
+    with zipfile.ZipFile(sh3d.SRC_ZIP) as zf:
+        java = zf.read(sh3d.DTD_JAVA).decode("utf-8")
+    pattern = r'parse(?:Optional)?(?:Float|Integer|Long|Decimal)\(\w+, *"(\w+)"'
+    assert set(re.findall(pattern, java)) == sh3d.NUMERIC_ATTRS
