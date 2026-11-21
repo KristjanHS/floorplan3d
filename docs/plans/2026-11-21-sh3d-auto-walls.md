@@ -6,7 +6,9 @@ the user then edits (not traces) them in SweetHome3D. Measured results (scores, 
 ## Rulings (user, 2026-11-21)
 - Detector: classic parallel-pair line segments (arXiv 1710.01802; 1911.11356) with OpenCV on the level's background image. CubiCasa5K / PyTorch OUT.
 - Fallback ONLY if below bar: FloorplanToBlender3d wall boxes (`scripts/ftb_probe.py` `box_segments` :64 / `verts_segments` :72 over `work/<floor>/ftb`), merged and scored the same way.
-- Bar: hand-traced walls in Home.xml = ground truth. Traced wall matched ⇔ a generated wall within 10 cm centre-line distance and 3°. PASS ≥ 70 % per level; extras reported, not gated.
+- Bar: hand-traced walls with thickness inside `GAP_CM` = ground truth (thicker exterior walls excluded). Traced wall matched ⇔ a generated wall within 10 cm centre-line distance and 3°. PASS ≥ 70 % per level; extras reported, not gated.
+- Internal only = skip generated walls matching a traced wall (no thickness cap). Edited auto wall on re-run = adopt (untag, keep). Height = the wall's level `height`.
+- Detect on the level's embedded background image (it is the trace PNG — no second px frame).
 - Re-run replaces ONLY tagged walls; hand-traced walls never touched. `make push NAME=` repacks unchanged.
 - `scripts/preprocess.py` `wall_mask` is NOT reused (fails on double-line + hatching walls).
 
@@ -52,7 +54,7 @@ Recommend: NEW `scripts/walls.py` (pure numpy/cv2 geometry: segments, pairing, m
 - **3.1 Score.** `walls.score(generated, traced)` → matched/traced, unmatched traced ids, extras. Tests `test_score_tolerance_edges` (9 cm/2.9° match; 11 cm/3.1° miss), `test_score_pass_threshold`.
 - **3.2 `make walls-score NAME=`.** `sh3d_walls.py score NAME`: per level detect → cm → score vs traced walls on that level; prints table + PASS/FAIL; overlay PNG (image + traced green,
   generated magenta, unmatched traced red) → `work/walls/<NAME>-L<i>-score.png`. End-to-end test on toy home + fixture image in `tmp_path`. Read-only: test asserts Home.xml sha unchanged.
-- **3.3 Run live + [USER] GO/NO-GO.** Run on the user's home; record per-level scores in a local results doc. [USER] eyeballs the score overlays.
+- **3.3 Run live + [USER] GO/NO-GO.** Prereq [USER]: trace ~5 internal walls per level in SH3D, then `make pull`. Run on the user's home; record per-level scores in a local results doc. [USER] eyeballs the score overlays.
   Gate: every level ≥ 70 % and user GO → Stage 5. Otherwise → Stage 4.
 
 ## Stage 4 — Fallback: FTB wall boxes (ONLY if Stage 3.3 is below bar)
@@ -65,16 +67,10 @@ Recommend: NEW `scripts/walls.py` (pure numpy/cv2 geometry: segments, pairing, m
 - **5.1 Tag survival check.** Tag = `<property name="floorplan3d.auto" value="<geometry sig>"/>` + id prefix `auto-`. Test: tagged wall in toy Home.xml passes `validate_errors`.
   [USER] on a scratch home (`NAME=autotest`, never the real one): push → open in SH3D → move a wall → save → pull; assert property + id survive. Fails → pick the surviving one; record in NOTES.md.
 - **5.2 `write_walls()`.** Remove tagged walls + clear `wallAtStart`/`wallAtEnd` refs to them; skip generated walls that match a traced wall; insert new walls at the DTD-legal position
-  (after the last `<wall>`), `level` set, height = home `wallHeight`, numbers `.`-decimal. Tests: hand walls byte-identical; second run byte-identical (idempotent); dangling ref cleared; DTD clean.
+  (after the last `<wall>`), `level` set, height = the level's `height`, numbers `.`-decimal. Tests: hand walls byte-identical; second run byte-identical (idempotent); dangling ref cleared; DTD clean.
 - **5.3 Edited-tag guard + target.** Tagged wall whose geometry ≠ its sig = user-edited → untag (becomes hand-traced), report. `make walls NAME=` (refuses on dirty `sh3d_src/<NAME>`, like pull).
   Tests: edited wall survives a re-run untagged; unedited replaced.
 
 ## Stage 6 — Close
 - **6.1** `make check` green. Live: `make walls NAME=<name>` → `make push NAME=<name>` → [USER] opens the printed Windows path in SH3D: walls on drawn lines, editable, saves cleanly.
 - **6.2** `code-reviewer` sub-agent over the whole diff; fix findings. NOTES.md: background transform + tag-survival facts (generic only). Results → a local results doc. Archive this plan.
-
-## Open questions
-1. "Internal only": default = skip generated walls already matched by a traced wall (dedupe). Alternative: thickness filter to drop exterior walls. Which?
-2. Edited auto wall on re-run: default = adopt (untag, keep). Alternative: refuse until the user resolves.
-3. If a level's background image is NOT the trace PNG: detect on the embedded image (default — it is the transform's px frame) or map the trace PNG onto it?
-4. Wall height: home `wallHeight` (default) or the level's height?
