@@ -40,7 +40,9 @@ def built_floor(tmp_path: Path) -> plans.Floor:
     return floor
 
 
-@pytest.mark.parametrize("edit", [{"metres": 1.2}, {"basis": 0.5}], ids=["metres", "basis"])
+@pytest.mark.parametrize(
+    "edit", [{"metres": 1.2}, {"basis": 0.5}, {"basis_dpi": 300}], ids=["metres", "basis", "basis_dpi"]
+)
 def test_calibration_edit_reruns_only_export(tmp_path, edit):
     floor = built_floor(tmp_path)
     floor = replace(floor, calibration=replace(CAL, **edit))  # same report path: staleness is the stamp's doing

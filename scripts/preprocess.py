@@ -15,6 +15,7 @@ MAX_SKEW_DEG = 10.0
 FRAME_MARGIN = 8  # work px between the building's silhouette and its outline frame
 FRAME_BRIDGE = 101  # work px: exterior door gaps narrower than this close before the silhouette fills
 MIN_OUTLINE_COVER = 0.97
+MAX_OVERRIDE_TINT = 16  # an override pixel whose B-G or G-R differ more than this is colour, not gray
 
 
 def render(pdf: Path, page: int, dpi: int) -> np.ndarray:
@@ -134,16 +135,36 @@ def grid(binary: np.ndarray, step: int = GRID_STEP) -> np.ndarray:
 
 
 def read_override(path: Path, shape: tuple[int, ...]) -> np.ndarray:
-    """The hand-drawn walls PNG, binarized at 128; it must match the auto work PNG it was drawn on."""
-    gray = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
-    if gray is None:
+    """The hand-drawn walls PNG, binarized at 128; it must match the auto work PNG it was drawn on.
+
+    Alpha composites over white (an eraser's transparent pixels are no wall); colour is refused, so lines of the
+    red-gridded copy never turn into walls.
+    """
+    img = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+    if img is None:
         raise ValueError(f"{path}: not a readable image")
+    if img.dtype not in (np.uint8, np.uint16):
+        raise ValueError(f"{path}: expected an 8- or 16-bit image, got {img.dtype}")
+    px = img.astype(np.float64) * (255 / (255 if img.dtype == np.uint8 else 65535))
+    if px.ndim == 2:
+        px = px[..., None]
+    if px.shape[2] in (2, 4):  # gray+alpha / BGRA
+        alpha = px[..., -1:] / 255
+        px = px[..., :-1] * alpha + 255 * (1 - alpha)
+    if px.shape[2] == 3:
+        b, g, r = px[..., 0], px[..., 1], px[..., 2]
+        if max(np.abs(b - g).max(), np.abs(g - r).max()) > MAX_OVERRIDE_TINT:
+            raise ValueError(
+                f"{path} has colour: draw the override on the plain work PNG (not the red-gridded _grid.png), "
+                "black walls on white"
+            )
+    gray = px.mean(axis=2)
     if gray.shape != shape:
         raise ValueError(
             f"{path} is {gray.shape[1]}x{gray.shape[0]} px but the auto work PNG is {shape[1]}x{shape[0]}: "
-            "redraw it on a copy of the current work PNG (max_side or dpi changed?)"
+            "redraw it on a copy of the current work PNG (its size follows the PDF page, dpi and max_side)"
         )
-    return cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY)[1]
+    return np.where(gray >= 128, 255, 0).astype(np.uint8)
 
 
 def preprocess(floor: plans.Floor) -> dict:
@@ -156,14 +177,15 @@ def preprocess(floor: plans.Floor) -> dict:
     ink = np.count_nonzero(clean == 0)
     mask_ink_ratio = np.count_nonzero(masked == 0) / ink if ink else 0.0
     out, scale = downscale(masked, floor.max_side)
-    cover = outline_cover(out)
-    if cover < MIN_OUTLINE_COVER:
-        print(f"WARNING {floor.name}: outline_cover {cover:.3f} < {MIN_OUTLINE_COVER} (largest wall block)")
+    cover = outline_cover(out)  # before the frame: it reads how much of the outline the wall mask kept
     if floor.wall_min_px:
         out = outline_frame(out)
     walls = "auto"
     if floor.walls_override.is_file():
         out, walls = read_override(floor.walls_override, out.shape), "override"
+        cover = outline_cover(out)  # the PNG upstream gets; a kept frame encloses everything and reads 1.0
+    if cover < MIN_OUTLINE_COVER:
+        print(f"WARNING {floor.name}: outline_cover {cover:.3f} < {MIN_OUTLINE_COVER} (largest {walls} wall block)")
     floor.png.parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(floor.png), out)
     cv2.imwrite(str(floor.grid), grid(out))

@@ -158,6 +158,44 @@ def test_walls_override_of_the_wrong_shape_raises(floor):
         preprocess.preprocess(floor)
 
 
+def test_walls_override_erased_to_transparent_is_white(floor):
+    preprocess.preprocess(floor)
+    auto = read(floor.png, cv2.IMREAD_GRAYSCALE)
+    drawn = cv2.cvtColor(auto, cv2.COLOR_GRAY2BGRA)
+    drawn[auto == 0] = (0, 0, 0, 0)  # an eraser on a layer with alpha leaves transparent black
+    drawn[10:20, 10:60] = (0, 0, 0, 255)
+    cv2.imwrite(str(floor.walls_override), drawn)
+    preprocess.preprocess(floor)
+    assert np.count_nonzero(read(floor.png, cv2.IMREAD_GRAYSCALE) == 0) == 500
+
+
+def test_walls_override_in_colour_raises(floor):
+    preprocess.preprocess(floor)
+    floor.walls_override.write_bytes(floor.grid.read_bytes())  # drawn on the red-gridded copy by mistake
+    with pytest.raises(ValueError, match=r"has colour: draw the override on the plain work PNG"):
+        preprocess.preprocess(floor)
+
+
+def test_walls_override_as_gray_rgb_is_accepted(floor):
+    preprocess.preprocess(floor)
+    auto = read(floor.png, cv2.IMREAD_GRAYSCALE)
+    cv2.imwrite(str(floor.walls_override), cv2.cvtColor(auto, cv2.COLOR_GRAY2BGR))
+    assert preprocess.preprocess(floor)["walls"] == "override"
+    assert (read(floor.png, cv2.IMREAD_GRAYSCALE) == auto).all()
+
+
+def test_walls_override_outline_cover_reads_the_override(floor, capsys):
+    auto_meta = preprocess.preprocess(floor)
+    assert "WARNING" not in capsys.readouterr().out
+    drawn = np.full((auto_meta["height"], auto_meta["width"]), 255, np.uint8)
+    drawn[100:110, 100:300] = 0  # a long block and a far-off one: the largest covers little of the ink bbox
+    drawn[500:510, 700:720] = 0
+    cv2.imwrite(str(floor.walls_override), drawn)
+    meta = preprocess.preprocess(floor)
+    assert auto_meta["outline_cover"] >= preprocess.MIN_OUTLINE_COVER > meta["outline_cover"]
+    assert "outline_cover" in capsys.readouterr().out
+
+
 def test_plans_rejects_degenerate_calibration(tmp_path):
     y = tmp_path / "plans.yaml"
     y.write_text("floors:\n  - name: a\n    pdf: a.pdf\n    calibration: {p1: [5, 5], p2: [5, 5], metres: 3}\n")
@@ -172,12 +210,15 @@ def test_plans_rejects_a_negative_wall_min_px(tmp_path):
         plans.load(y)
 
 
-def basis_floor(tmp_path: Path, basis: float | None, downscale: float | None) -> plans.Floor:
-    """A floor calibrated at `basis` whose current work PNG was made at `downscale` (None = no meta yet)."""
-    cal = plans.Calibration((100.0, 50.0), (300.0, 50.0), 4.0, basis)
-    floor = plans.Floor(name="f", pdf=tmp_path / "f.pdf", calibration=cal, work=tmp_path)
+def basis_floor(
+    tmp_path: Path, basis: float | None, downscale: float | None, basis_dpi: int = 150, dpi: int = 150
+) -> plans.Floor:
+    """A floor calibrated at `basis`/`basis_dpi` whose current work PNG was made at `downscale`/`dpi` (None = no
+    meta yet)."""
+    cal = plans.Calibration((100.0, 50.0), (300.0, 50.0), 4.0, basis, basis_dpi)
+    floor = plans.Floor(name="f", pdf=tmp_path / "f.pdf", calibration=cal, work=tmp_path, dpi=dpi)
     if downscale is not None:
-        floor.meta.write_text(json.dumps({"downscale": downscale}))
+        floor.meta.write_text(json.dumps({"downscale": downscale, "dpi": dpi}))
     return floor
 
 
@@ -216,3 +257,33 @@ def test_plans_loads_a_basis(tmp_path):
     )
     (floor,) = plans.load(y)
     assert floor.calibration is not None and floor.calibration.basis == 0.4
+
+
+def test_calibration_basis_at_another_dpi_rescales_by_the_dpi_too(tmp_path):
+    """Points picked at dpi 150 on a work PNG at the same downscale as today's dpi-300 one are doubled."""
+    cal = basis_floor(tmp_path, 0.4, 0.4, basis_dpi=150, dpi=300).calibration_px()
+    assert cal is not None
+    assert cal.p1 == pytest.approx((200.0, 100.0)) and cal.p2 == pytest.approx((600.0, 100.0))
+    assert cal.metres_per_px == pytest.approx(0.01)
+
+
+def test_plans_loads_basis_dpi_defaulting_to_150(tmp_path):
+    y = tmp_path / "plans.yaml"
+    cal = "{p1: [5, 5], p2: [9, 5], metres: 3, basis: 0.4%s}"
+    y.write_text(
+        f"floors:\n  - name: a\n    pdf: a.pdf\n    calibration: {cal % ''}\n"
+        f"  - name: b\n    pdf: b.pdf\n    calibration: {cal % ', basis_dpi: 300'}\n"
+    )
+    a, b = plans.load(y)
+    assert a.calibration is not None and b.calibration is not None
+    assert (a.calibration.basis_dpi, b.calibration.basis_dpi) == (150, 300)
+
+
+@pytest.mark.parametrize("extra", [", basis: 0.4, basis_dpi: 0", ", basis_dpi: 300"], ids=["zero", "no-basis"])
+def test_plans_rejects_a_bad_basis_dpi(tmp_path, extra):
+    y = tmp_path / "plans.yaml"
+    y.write_text(
+        f"floors:\n  - name: a\n    pdf: a.pdf\n    calibration: {{p1: [5, 5], p2: [9, 5], metres: 3{extra}}}\n"
+    )
+    with pytest.raises(ValueError, match="basis_dpi"):
+        plans.load(y)
