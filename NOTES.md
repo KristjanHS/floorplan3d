@@ -13,6 +13,7 @@
 - No doors/windows on Linux: the Blender script joins their data paths with `\\` (`floorplan_to_3dObject_in_blender.py:220-262`).
 - `convert.py` links `Images/` into the scratch dir: door/window templates load CWD-relative (`const.DOOR_MODEL`).
 - Previews render with Cycles CPU (16 samples, ~15 s/floor): Workbench segfaults headless (`EGL_BAD_MATCH`).
-- Upstream's Blender build can drop wall contours (fixture: lower/right outer walls missing, x extent 24.8 % short of the drawing).
+- Wall loss is in detection, not the Blender build (`make probe`): `wall_filter`'s 3×3 opening ×2 erases thin strokes, and
+  only walls with a vertex inside the LARGEST gray<230 contour survive (fixture: that contour spans 69 % × 47 %).
 - `sandbox.bwrap_cmd` mounts a tmpfs on `/tmp`, so `convert.py` cannot read a PNG under `/tmp` (e2e test works under `work/`).
 - `export` never deletes: stale `*_UNSCALED*` files stay in `output/<floor>/` after calibrating.

@@ -8,7 +8,7 @@ PLANS ?= plans.yaml
 UPSTREAM := vendor/FloorplanToBlender3d
 UT := work/upstream-test
 
-.PHONY: help sync check whitespace lint fmt test audit push-gate setup-hooks pre-commit upstream-test preprocess convert export models
+.PHONY: help sync check whitespace lint fmt test audit push-gate setup-hooks pre-commit upstream-test preprocess convert export models probe
 
 help:
 	@echo "make sync     - uv sync (locked, all groups) + uv pip check"
@@ -20,6 +20,7 @@ help:
 	@echo "make preprocess - PDFs in plans.yaml -> work/<floor>.png + _grid.png + .json"
 	@echo "make convert    - sandboxed upstream run per floor -> work/<floor>/<floor>_raw.blend"
 	@echo "make export     - Blender: scale raw blend -> output/<floor>/ .blend .glb .obj previews + wall check"
+	@echo "make probe FLOOR=<f> [TARGETS='id=x1,y1:x2,y2 ...'] - per-stage wall loss of the last convert -> work/<f>/probe.json"
 	@echo "make upstream-test - upstream's own tests, sandboxed (no display tests)"
 	@echo "make audit    - uv audit: known vulnerabilities in uv.lock"
 	@echo "make setup-hooks - install pre-commit (commit) + make check (push) git hooks"
@@ -66,6 +67,15 @@ models:
 
 export:
 	uv run python scripts/export.py --blender $(BLENDER)
+
+# Reads the last convert's scratch (work/<f>/ftb) and the newest export report; writes only under work/<f>.
+probe:
+	@test -n "$(FLOOR)" || { echo "usage: make probe FLOOR=<floor> [TARGETS='id=x1,y1:x2,y2 ...']" >&2; exit 2; }
+	uv run python scripts/sandbox.py --rw work/$(FLOOR) --env MPLBACKEND=Agg --chdir work/$(FLOOR)/ftb -- \
+	  $(abspath .venv/bin/python) -I $(abspath scripts/ftb_probe.py) $(abspath work/$(FLOOR)/ftb/floor.ini) \
+	  --out $(abspath work/$(FLOOR)/probe.json) \
+	  $(foreach r,$(firstword $(wildcard output/$(FLOOR)/$(FLOOR)_report.json output/$(FLOOR)/$(FLOOR)_UNSCALED_report.json)),--report $(abspath $(r))) \
+	  $(foreach t,$(TARGETS),--target $(t))
 
 # Upstream tests write ../Configs relative to Testing/, so run a scratch copy; Images/ is linked read-only.
 upstream-test:
