@@ -1,5 +1,7 @@
 # Tooling follow-ups
 
+Status: ✅ SHIPPED 2026-11-21 — item 1 fixed, item 4 closed as refuted.
+
 Left open after setting up rules, make targets and hooks (commits `50a1dee`..`ef65f7e`). Build work
 itself lives in `FLOORPLAN_TO_3D_SETUP.md`.
 
@@ -7,11 +9,10 @@ itself lives in `FLOORPLAN_TO_3D_SETUP.md`.
 
 - The installed hooks pin `INSTALL_PYTHON=<repo>/.venv/bin/python`. With `.venv` gone, commits still run,
   but on `~/.local/bin/pre-commit` (3.8.0), not the locked 4.7.0.
-- Fix: re-run `make sync`. Optionally make `make setup-hooks` depend on `sync`.
+- Fixed: `.pre-commit-config.yaml` sets `minimum_pre_commit_version: '4.7.0'` → 3.8.0 now exits 1 with
+  an InvalidConfigError; recover with `make sync`.
 
 ## 4. Blender's bundled Python version may differ from 3.12
 
-- ruff and pyright check against `requires-python` (3.12). `bpy` scripts run on Blender's bundled Python,
-  which may be older. Syntax that is valid in 3.12 could pass `make check` and then fail inside Blender.
-- Once the Blender version is known, set a per-path ruff `target-version` / pyright `pythonVersion` for
-  the bpy scripts, or add a `$(BLENDER) --background --python-expr` smoke test.
+- Refuted: Blender 5.2.4 LTS bundles Python 3.13.13, newer than 3.12; `test_export.py` and
+  `test_measure.py` already run both bpy scripts inside real Blender.
