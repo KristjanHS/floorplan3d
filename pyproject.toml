@@ -3,7 +3,16 @@ name = "floorplan3d"
 version = "0.1.0"
 description = "Scanned floor-plan PDFs to scaled 3D models via FloorplanToBlender3d"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = [
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.5",
+    "opencv-python>=5.1.0.95",
+    "pillow>=13.0.0",
+    "pyfiglet>=1.0.4",
+    "pymupdf>=2.1",
+    "pyyaml>=6.0.4",
+    "scipy>=1.18.1",
+]
 
 [tool.ruff]
 line-length = 120

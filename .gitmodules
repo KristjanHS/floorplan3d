@@ -1,0 +1,4 @@
+[submodule "vendor/FloorplanToBlender3d"]
+	path = vendor/FloorplanToBlender3d
+	url = https://github.com/grebtsew/FloorplanToBlender3d
+	ignore = untracked

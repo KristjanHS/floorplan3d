@@ -3,7 +3,11 @@ export UV_LOCKED := 1
 # Empty tree: diff --check against it covers every tracked file, committed or not.
 EMPTY_TREE := 4b825dc642cb6eb9a060e54bf8d69288fbee4904
 
-.PHONY: help sync check lint fmt test audit push-gate setup-hooks pre-commit
+BLENDER ?= blender
+UPSTREAM := vendor/FloorplanToBlender3d
+UT := work/upstream-test
+
+.PHONY: help sync check lint fmt test audit push-gate setup-hooks pre-commit upstream-test
 
 help:
 	@echo "make sync     - uv sync (locked, all groups) + uv pip check"
@@ -11,6 +15,7 @@ help:
 	@echo "make lint     - ruff check + ruff format --check + pyright"
 	@echo "make fmt      - ruff check --fix + ruff format (rewrites files)"
 	@echo "make test     - pytest (skips while tests/ is absent)"
+	@echo "make upstream-test - upstream's own tests, sandboxed (no display tests)"
 	@echo "make audit    - uv audit: known vulnerabilities in uv.lock"
 	@echo "make setup-hooks - install pre-commit (commit) + make check (push) git hooks"
 	@echo "make pre-commit  - run all commit-stage hooks on all files"
@@ -36,6 +41,17 @@ fmt:
 
 test:
 	@if [ -d tests ]; then uv run pytest -q || [ $$? -eq 5 ]; else echo "pytest: no tests/ yet"; fi
+
+# Upstream tests write ../Configs relative to Testing/, so run a scratch copy; Images/ is linked read-only.
+upstream-test:
+	rm -rf $(UT) && mkdir -p $(UT)
+	cp -r $(UPSTREAM)/Testing $(UPSTREAM)/FloorplanToBlenderLib $(UT)/
+	ln -s $(abspath $(UPSTREAM)/Images) $(UT)/Images
+	# test_config reads ../Configs, which upstream only creates on a first run from the repo root.
+	uv run python scripts/sandbox.py --rw $(UT) --chdir $(UT) -- \
+	  $(abspath .venv/bin/python) -c 'from FloorplanToBlenderLib import config; config.generate_file()'
+	MPLBACKEND=Agg uv run python scripts/sandbox.py --rw $(UT) --chdir $(UT)/Testing -- \
+	  $(abspath .venv/bin/python) -m pytest -q -p no:cacheprovider -c /dev/null --rootdir=. --ignore=visuals
 
 audit:
 	uv audit
