@@ -33,7 +33,9 @@ def stamp(path: Path, data: dict) -> Path:
 
 def preprocess_inputs(floor: plans.Floor) -> dict:
     st = floor.pdf.stat() if floor.pdf.is_file() else None
+    ov = floor.walls_override.stat() if floor.walls_override.is_file() else None
     return {
+        "walls_override": ov and {"size": ov.st_size, "mtime_ns": ov.st_mtime_ns},
         "pdf": str(floor.pdf),
         "pdf_size": st and st.st_size,
         "pdf_mtime_ns": st and st.st_mtime_ns,

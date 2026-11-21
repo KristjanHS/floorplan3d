@@ -133,6 +133,31 @@ def test_outline_cover(cut: bool, expect_ok: bool):
     assert (preprocess.outline_cover(img) >= preprocess.MIN_OUTLINE_COVER) == expect_ok
 
 
+def test_walls_override_replaces_the_auto_png_until_removed(floor):
+    auto_meta = preprocess.preprocess(floor)
+    auto = read(floor.png, cv2.IMREAD_GRAYSCALE)
+    drawn = auto.copy()
+    drawn[10:20, 10:60] = 100  # dark stroke -> wall
+    drawn[auto == 0] = 200  # light grey over every auto wall -> erased
+    cv2.imwrite(str(floor.walls_override), drawn)
+
+    meta = preprocess.preprocess(floor)
+    out = read(floor.png, cv2.IMREAD_GRAYSCALE)
+    assert (meta["walls"], auto_meta["walls"]) == ("override", "auto")
+    assert (out[10:20, 10:60] == 0).all()
+    assert np.count_nonzero(out == 0) == 500
+
+    floor.walls_override.unlink()
+    assert preprocess.preprocess(floor)["walls"] == "auto"
+    assert (read(floor.png, cv2.IMREAD_GRAYSCALE) == auto).all()
+
+
+def test_walls_override_of_the_wrong_shape_raises(floor):
+    cv2.imwrite(str(floor.walls_override), np.full((50, 70), 255, np.uint8))
+    with pytest.raises(ValueError, match=r"is 70x50 px but the auto work PNG is \d+x\d+"):
+        preprocess.preprocess(floor)
+
+
 def test_plans_rejects_degenerate_calibration(tmp_path):
     y = tmp_path / "plans.yaml"
     y.write_text("floors:\n  - name: a\n    pdf: a.pdf\n    calibration: {p1: [5, 5], p2: [5, 5], metres: 3}\n")

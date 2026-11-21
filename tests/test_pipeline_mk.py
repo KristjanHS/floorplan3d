@@ -49,6 +49,19 @@ def test_calibration_edit_reruns_only_export(tmp_path, edit):
     assert make_q(mk, pipeline_mk.report(floor)) == 1
 
 
+def test_walls_override_add_touch_remove_reruns_preprocess(tmp_path):
+    floor = built_floor(tmp_path)
+    override = floor.walls_override
+    override.write_bytes(b"png")
+    assert make_q(render(tmp_path, floor), floor.meta) == 1
+    built_floor(tmp_path)  # re-made with the override in place
+    os.utime(override, ns=(override.stat().st_atime_ns, override.stat().st_mtime_ns + 10**9))
+    assert make_q(render(tmp_path, floor), floor.meta) == 1
+    built_floor(tmp_path)
+    override.unlink()
+    assert make_q(render(tmp_path, floor), floor.meta) == 1
+
+
 @pytest.mark.parametrize("edit", [{"wall_min_px": 4}, {"wall_min_area": 100}], ids=["wall_min_px", "wall_min_area"])
 def test_wall_mask_edit_reruns_preprocess(tmp_path, edit):
     floor = replace(built_floor(tmp_path), **edit)

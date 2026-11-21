@@ -133,6 +133,19 @@ def grid(binary: np.ndarray, step: int = GRID_STEP) -> np.ndarray:
     return img
 
 
+def read_override(path: Path, shape: tuple[int, ...]) -> np.ndarray:
+    """The hand-drawn walls PNG, binarized at 128; it must match the auto work PNG it was drawn on."""
+    gray = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+    if gray is None:
+        raise ValueError(f"{path}: not a readable image")
+    if gray.shape != shape:
+        raise ValueError(
+            f"{path} is {gray.shape[1]}x{gray.shape[0]} px but the auto work PNG is {shape[1]}x{shape[0]}: "
+            "redraw it on a copy of the current work PNG (max_side or dpi changed?)"
+        )
+    return cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY)[1]
+
+
 def preprocess(floor: plans.Floor) -> dict:
     gray = render(floor.pdf, floor.page, floor.dpi)
     angle = skew_angle(gray)
@@ -148,6 +161,9 @@ def preprocess(floor: plans.Floor) -> dict:
         print(f"WARNING {floor.name}: outline_cover {cover:.3f} < {MIN_OUTLINE_COVER} (largest wall block)")
     if floor.wall_min_px:
         out = outline_frame(out)
+    walls = "auto"
+    if floor.walls_override.is_file():
+        out, walls = read_override(floor.walls_override, out.shape), "override"
     floor.png.parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(floor.png), out)
     cv2.imwrite(str(floor.grid), grid(out))
@@ -160,6 +176,7 @@ def preprocess(floor: plans.Floor) -> dict:
         "wall_min_px": floor.wall_min_px,
         "mask_ink_ratio": round(mask_ink_ratio, 4),
         "outline_cover": round(cover, 4),
+        "walls": walls,
         "width": out.shape[1],
         "height": out.shape[0],
     }

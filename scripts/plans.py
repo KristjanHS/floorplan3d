@@ -59,6 +59,11 @@ class Floor:
         return self.work / f"{self.name}_grid.png"
 
     @property
+    def walls_override(self) -> Path:
+        """Optional hand-edited copy of the work PNG; replaces the auto wall mask while it exists."""
+        return self.pdf.parent / f"{self.name}_walls.png"
+
+    @property
     def raw_blend(self) -> Path:
         return self.work / self.name / f"{self.name}_raw.blend"
 
