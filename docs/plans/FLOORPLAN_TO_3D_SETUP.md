@@ -11,7 +11,8 @@ Output per floor: `.blend` file + `.glb` + `.obj` (for Sweet Home 3D / other too
 - My floor plans are private: `input/` and `output/` must be in `.gitignore`. Never commit or upload them anywhere.
 - Python-first. Use a venv (`uv` if available, otherwise `python -m venv`). Pin dependencies.
 - Target OS: Linux (also runs under WSL). Blender runs headless (`blender -b`).
-- Blender: pinned official portable tarball in `~/.local/opt/`, symlinked to `~/.local/bin/blender`, no sudo; Makefile `BLENDER ?= blender`; version in `NOTES.md`, step 2 decides it.
+- Blender: newest LTS official portable tarball, SHA256-checked, in `~/.local/opt/`, symlinked to `~/.local/bin/blender`, no sudo; Makefile `BLENDER ?= blender`; version + sha256 in `NOTES.md`.
+- Isolation: upstream code (library, its tests, the Blender build) runs under `bwrap --unshare-net`, read-only FS except `work/<floor>`.
 - License: this repo MIT (`LICENSE`); upstream submodule stays GPL-3.0 — README says so.
 - Don't guess upstream behaviour — **read its source** to confirm anything below marked VERIFY.
 
@@ -55,14 +56,15 @@ floors:
 If calibration is missing, still run, but label the output `UNSCALED` and tell me.
 
 ## Steps
-1. `git init`, create layout, `.gitignore`, add submodule pinned at `2da4c95` (vetted: `docs/security-review-FloorplanToBlender3d.md`), set up venv, install upstream's run-path deps at current versions (never its `requirements.txt` pins) + `pymupdf`, `pyyaml`. Check `blender --version`; if missing, tell me how to install it (don't install system packages without asking).
+1. `git init`, create layout, `.gitignore`, add submodule pinned at `2da4c95` (vetted: `docs/security-review-FloorplanToBlender3d.md`), set up venv, install upstream's run-path deps at current versions (never its `requirements.txt` pins) + `pymupdf`, `pyyaml`. Install Blender per the ground rule (download approved 2026-11-21) and check `blender --version`.
 2. Run upstream's own example/test (`Testing/`, `pytest`) once to confirm the install works before touching my files.
-3. `preprocess.py`: render PDF page with PyMuPDF at ~150 DPI → grayscale → deskew → binarize (Otsu/adaptive) → remove small specks → downscale so the long side is ≤ ~1000 px (tune if detection fails). Save the PNG plus the scale factor used, so calibration points stay valid.
+3. `preprocess.py`: render PDF page with PyMuPDF at ~150 DPI → grayscale → deskew → binarize (Otsu/adaptive) → remove small specks → downscale so the long side is ≤ ~1000 px (tune if detection fails). Save the PNG plus the scale factor used, so calibration points stay valid, and `<name>_grid.png` with pixel coordinates labelled every 100 px for picking calibration points.
 4. `convert.py`: for each floor, call upstream non-interactively, applying fixes F2–F4 in `docs/security-review-FloorplanToBlender3d.md`; move result to `output/<name>/<name>.blend`.
 5. `export_blend.py` (via `blender -b <file> --python scripts/export_blend.py -- ...`): apply metres-per-pixel scale from calibration, set wall height, export `.glb` and `.obj`, render a top-down + perspective PNG preview.
 6. `make all` runs everything end-to-end.
 
 ## Verification (required before saying "done")
+- Done = both: pytest e2e on a fixture PDF built from upstream `Images/Examples/example.png`, and the user's real PDFs in `input/` (dropped in at step 3).
 - Look at each preview PNG yourself and compare with the source plan image: walls present, no big gaps, rooms not merged.
 - Check one known wall length in the exported model against `calibration.metres` (±3%).
 - Report per floor: OK / problems seen / suggested fix (e.g. different downscale, stronger cleanup, manual erase of text/dimension lines).
