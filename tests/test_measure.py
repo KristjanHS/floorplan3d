@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -11,7 +12,7 @@ import plans
 
 BLENDER = shutil.which("blender")
 CAL = plans.Calibration((0.0, 0.0), (200.0, 0.0), 5.0)  # 0.025 m/px: not the export test's 0.01
-KLK = ((450.0, 100.0), (515.0, 100.0))  # inside the example's KLK room, near its left and right walls
+KLK = (482.5, 100.0)  # inside the example's KLK room, between its left and right walls
 
 
 def test_to_world_flips_y():
@@ -51,13 +52,53 @@ def wall_faces_px(floor: plans.Floor, y: float, x_mid: float) -> tuple[float, fl
 
 
 def test_measure_span_matches_upstream_walls(scaled):
-    (p1, p2), mpp = KLK, CAL.metres_per_px
-    left, right = wall_faces_px(scaled, p1[1], (p1[0] + p2[0]) / 2)
-    span, h1, h2 = measure.measure(scaled, p1, p2, str(BLENDER))
+    (x, y), mpp = KLK, CAL.metres_per_px
+    left, right = wall_faces_px(scaled, y, x)
+    span, h1, h2 = measure.measure(scaled, (left, y), (right, y), str(BLENDER))
     assert span == pytest.approx((right - left) * mpp, abs=0.5 * mpp)
-    assert h1[0] < h2[0]  # the p1-side hit lies towards p1
+    assert h1 == pytest.approx((left, y), abs=0.5) and h2 == pytest.approx((right, y), abs=0.5)  # hits back in px
+
+
+def test_measure_rejects_a_midpoint_inside_a_wall(scaled):
+    """ray_cast hits back faces: from inside a wall both rays stop at its own faces, a thickness-wide span."""
+    (x, y) = KLK
+    inner = wall_faces_px(scaled, y, x)[0]
+    outer = wall_faces_px(scaled, y, inner - 0.5)[0]
+    assert inner - outer > 2  # a real wall thickness, so the midpoint below is inside it
+    mid = (inner + outer) / 2
+    with pytest.raises(SystemExit, match="p1-side wall at .*missing or undetected wall"):
+        measure.measure(scaled, (mid - 30, y), (mid + 30, y), str(BLENDER))
+
+
+def test_measure_rejects_a_far_wall(scaled):
+    (x, y) = KLK
+    left, right = wall_faces_px(scaled, y, x)
+    with pytest.raises(SystemExit, match="p2-side wall at .*missing or undetected wall"):
+        measure.measure(scaled, (left, y), ((left + right) / 2, y), str(BLENDER))
 
 
 def test_measure_fails_loudly_without_a_wall(scaled):
     with pytest.raises(SystemExit, match="no wall hit on the p1 side"):
         measure.measure(scaled, (5.0, 100.0), (60.0, 100.0), str(BLENDER))
+
+
+@pytest.mark.parametrize(
+    ("calibration", "message"),
+    [(None, "UNSCALED_report.json missing"), (plans.Calibration((0.0, 0.0), (100.0, 0.0), 5.0), "make models")],
+    ids=["calibration_removed", "calibration_changed"],
+)
+def test_measure_refuses_a_stale_scaled_export(scaled, calibration, message):
+    with pytest.raises(SystemExit, match=message):
+        measure.measure(replace(scaled, calibration=calibration), (450.0, 100.0), (515.0, 100.0), str(BLENDER))
+
+
+def test_px_origin_refuses_data_from_another_run(scaled, tmp_path: Path):
+    extent = measure.scaled_report(scaled)["extent_raw_units"]
+    with pytest.raises(SystemExit, match="different runs"):
+        measure.px_origin(scaled, [extent[0] + 0.01, extent[1]])
+    data = tmp_path / scaled.name / "ftb" / "Data" / "0"
+    shutil.copytree(scaled.work / scaled.name / "ftb" / "Data" / "0", data)
+    transform = json.loads((data / "transform.txt").read_text())
+    (data / "transform.txt").write_text(json.dumps(transform | {"rotation": [0, 0, 90]}))
+    with pytest.raises(SystemExit, match="rotation"):
+        measure.px_origin(replace(scaled, work=tmp_path), extent)

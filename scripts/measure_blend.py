@@ -19,6 +19,8 @@ def parse() -> argparse.Namespace:
 
 
 def first_hit(walls: list, origin: Vector, direction: Vector) -> Vector | None:
+    """Nearest hit on any wall. ray_cast hits faces from both sides, so an origin inside a wall hits that
+    wall's own faces; measure.py rejects any hit not near its p1/p2."""
     best = None
     for ob in walls:
         inv = ob.matrix_world.inverted()
