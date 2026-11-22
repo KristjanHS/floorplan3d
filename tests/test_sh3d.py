@@ -9,6 +9,7 @@ import pytest
 from lxml import etree
 
 import sh3d
+import sh3d_window
 
 HOME_XML = b"""<?xml version='1.0' encoding='UTF-8'?>
 <home version='7600' wallHeight='250'>
@@ -533,3 +534,38 @@ def test_auto_pull_unreadable_save_is_sh3d_error_tree_intact(
     assert "is not a readable zip" in capsys.readouterr().err
     assert {p.relative_to(pulled): p.read_bytes() for p in sorted(pulled.rglob("*")) if p.is_file()} == before
     assert sorted(p.name for p in roots.src.iterdir()) == [".git", "x"]  # no staging dir left behind
+
+
+@pytest.fixture
+def window_lib(tmp_path: Path) -> Path:
+    lib = tmp_path / "lib.sh3f"
+    sh3d_window.build_library([sh3d_window.Spec(100, 140), sh3d_window.parse_size("200x150=36Dv,164R")], lib)
+    return lib
+
+
+def test_add_model_registers_entries_push_packs_them(
+    roots: sh3d.Roots, pulled: Path, window_lib: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    entry = "floorplan3d#coupledWindow200x150-36Dv-164R"
+    assert run(roots, "add-model", "x", "--lib", str(window_lib), "--entry", entry) == 0
+    out = capsys.readouterr().out
+    # The fixture home holds entries 0 and 1: the model dir is next, its icon after it.
+    assert "model='2/window.obj' icon='3'" in out and "doorOrWindowSashStartAngle=0 180 180" in out
+    assert run(roots, "push", "x") == 0
+    with zipfile.ZipFile(window_lib) as lib, zipfile.ZipFile(roots.sh3d("x")) as home:
+        for theirs, ours in (("window.obj", "2/window.obj"), ("window.mtl", "2/window.mtl"), ("icon.png", "3")):
+            assert home.read(ours) == lib.read(f"coupledWindow200x150-36Dv-164R/{theirs}")
+        assert "2/" in home.namelist()
+
+
+def test_add_model_refuses_unknown_entry_and_a_second_copy(
+    roots: sh3d.Roots, pulled: Path, window_lib: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert run(roots, "add-model", "x", "--lib", str(window_lib), "--entry", "floorplan3d#nope") == 1
+    assert "floorplan3d#coupledWindow100x140" in capsys.readouterr().err  # lists what the library has
+    entry = "floorplan3d#coupledWindow100x140"
+    assert run(roots, "add-model", "x", "--lib", str(window_lib), "--entry", entry) == 0
+    capsys.readouterr()
+    assert run(roots, "add-model", "x", "--lib", str(window_lib), "--entry", entry) == 1
+    assert "already in" in capsys.readouterr().err
+    assert sorted(p.name for p in pulled.iterdir() if p.name[0].isdigit()) == ["0", "1", "2", "3"]

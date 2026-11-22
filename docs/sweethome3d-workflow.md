@@ -44,7 +44,7 @@ flowchart LR
 3. Edit `Home.xml` (yourself or via Claude Code), then `make validate NAME=<home>` checks it against the DTD built
    from the SH3D sources. Commit the edit in `sh3d_src`: every auto-pulling target and `make walls` refuse a dirty tree.
 4. `make push NAME=<home>` repacks the `.sh3d`. It refuses if the GUI saved since the last pull (both sides would
-   hold edits), if `Home.xml` fails validation, or if the tree has new files. It backs up the old file to `backups/`
+   hold edits), if `Home.xml` fails validation, or if the tree has new files (`make add-model NAME=<home> ENTRY=<id>` copies a furniture-library model in and registers it). It backs up the old file to `backups/`
    first and prints the Windows path to reopen. Then commit the updated `.sh3d_meta.json` in `sh3d_src`.
 
 The setup assumes WSL with SH3D running on Windows: `make push` prints the path via `wslpath`.

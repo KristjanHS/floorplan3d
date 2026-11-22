@@ -10,7 +10,7 @@ UT := work/upstream-test
 SH3D_SRC_ZIP ?= work/sh3d-src/SweetHome3D-7.6.1-src.zip
 SH3D_DTD := work/sh3d/SweetHome3D.dtd
 SH3D := uv run python scripts/sh3d.py --dtd $(SH3D_DTD)
-SH3D_CMDS := pull push validate inspect preview walls-overlay walls-rooms walls
+SH3D_CMDS := pull push validate inspect preview add-model walls-overlay walls-rooms walls
 
 ifneq ($(filter $(SH3D_CMDS),$(MAKECMDGOALS)),)
 # Command line only: WSL exports NAME=<hostname> into every shell.
@@ -45,6 +45,7 @@ help:
 	@echo "make walls-rooms NAME=<home> - dry run: walls from room gaps + 40-100 cm holes -> work/walls/<home>-L<i>-rooms.png"
 	@echo "make walls NAME=<home> - write room-gap walls into sh3d_src/<home>/Home.xml, tagged; re-run replaces unedited ones"
 	@echo "make window-lib [SIZES='100x140 200x150=36Dv,164R'] - coupled wooden window library -> output/sh3d/coupled-windows.sh3f (SH3D: Furniture > Import furniture library)"
+	@echo "make add-model NAME=<home> ENTRY=<catalogue id> [LIB=<.sh3f>] - copy a library model into sh3d_src/<home> so push packs it"
 	@echo "make sh3d-dtd  - rebuild work/sh3d/SweetHome3D.dtd from SH3D_SRC_ZIP (validate/push run it)"
 	@echo "make upstream-test - upstream's own tests, sandboxed (no display tests)"
 	@echo "make audit    - uv audit: known vulnerabilities in uv.lock"
@@ -128,6 +129,10 @@ validate push walls: sh3d-dtd
 
 pull validate inspect preview:
 	$(SH3D) $@ $(NAME)
+
+# ENTRY = catalogue id from window-lib's output, e.g. ENTRY='floorplan3d#coupledWindow100x140'; LIB defaults to it.
+add-model:
+	$(SH3D) add-model $(NAME) --entry '$(ENTRY)' $(if $(LIB),--lib '$(LIB)')
 
 walls-overlay:
 	uv run python scripts/sh3d_walls.py overlay $(NAME)

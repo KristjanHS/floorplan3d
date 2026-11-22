@@ -475,6 +475,80 @@ def push(roots: Roots, name: str) -> None:
     print(f"push: ok {name} — commit sh3d_src/{name}/{META}; reopen in SH3D")
 
 
+CATALOG = "PluginFurnitureCatalog.properties"
+
+
+def catalog_entries(props: str) -> dict[int, dict[str, str]]:
+    """`key#i=value` lines of a furniture library's catalogue, grouped by i (no escapes: our generator writes none)."""
+    entries: dict[int, dict[str, str]] = {}
+    for line in props.splitlines():
+        m = re.fullmatch(r"([A-Za-z]+)#(\d+)=(.*)", line)
+        if m:
+            entries.setdefault(int(m.group(2)), {})[m.group(1)] = m.group(3)
+    return entries
+
+
+def read_library_entry(lib: Path, entry_id: str) -> tuple[dict[str, str], dict[str, bytes], PurePosixPath, bytes]:
+    """(catalogue keys, model-dir files by name, model path, icon bytes) of one library entry."""
+    with zipfile.ZipFile(lib) as zf:
+        entries = catalog_entries(zf.read(CATALOG).decode("utf-8"))
+        found = [e for e in entries.values() if e.get("id") == entry_id]
+        if not found:
+            ids = ", ".join(e.get("id", "?") for e in entries.values())
+            raise Sh3dError(f"{entry_id!r} not in {lib} — it has: {ids}")
+        entry = found[0]
+        model, icon = PurePosixPath(entry["model"].lstrip("/")), entry["icon"].lstrip("/")
+        files = {
+            PurePosixPath(n).name: zf.read(n)
+            for n in zf.namelist()
+            if PurePosixPath(n).parent == model.parent and not n.endswith("/") and n != icon
+        }
+        icon_data = zf.read(icon)
+    return entry, files, model, icon_data
+
+
+def add_model(roots: Roots, name: str, lib: Path, entry_id: str) -> None:
+    """Copy one furniture-library entry's model (+ its icon) into the tree as new numbered entries and
+    register them in META, so push packs them; prints the Home.xml attributes that reference them."""
+    tree = roots.tree(name)
+    meta_path = tree / META
+    if not meta_path.is_file():
+        raise Sh3dError(f"{meta_path} not found — pull first")
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    try:
+        entry, files, model, icon_data = read_library_entry(lib, entry_id)
+    except (zipfile.BadZipFile, KeyError, OSError) as e:
+        raise Sh3dError(f"cannot read {entry_id!r} from {lib}: {e}") from e
+    for fname in files:
+        check_entry_name(fname)
+    want = hashlib.new(HASH, files[model.name]).hexdigest()
+    for rel, sha in tree_shas(tree).items():
+        if sha == want and PurePosixPath(rel).name == model.name:
+            raise Sh3dError(f"{entry_id} is already in {tree} as {rel} — reference model='{rel}'")
+    tops = [PurePosixPath(str(e["name"])).parts[0] for e in meta["entries"]]
+    n = max((int(t) for t in tops if t.isdigit()), default=-1) + 1
+    for path in (tree / str(n), tree / str(n + 1)):
+        if path.exists():
+            raise Sh3dError(f"{path} exists but is not in {META} — pull again")
+    (tree / str(n)).mkdir()
+    for fname, data in files.items():
+        (tree / str(n) / fname).write_bytes(data)
+    (tree / str(n + 1)).write_bytes(icon_data)
+    deflated = zipfile.ZIP_DEFLATED
+    meta["entries"] += [{"name": f"{n}/", "compress_type": deflated}]
+    meta["entries"] += [{"name": f"{n}/{fname}", "compress_type": deflated} for fname in sorted(files)]
+    meta["entries"] += [{"name": str(n + 1), "compress_type": deflated}]
+    meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+    print(f"add-model: {entry_id} -> model='{n}/{model.name}' icon='{n + 1}' — set on the piece in Home.xml:")
+    print(f"  catalogId='{entry_id}' name='{entry.get('name', '')}' creator='{entry.get('creator', '')}'")
+    for key in ("width", "depth", "height", "elevation"):
+        if key in entry:
+            print(f"  {key}={entry[key]}")
+    for key, value in entry.items():
+        if key.startswith("doorOrWindow") and key != "doorOrWindow":
+            print(f"  {key}={value}")
+
+
 PIECE_TAGS = frozenset({"pieceOfFurniture", "light", "doorOrWindow"})
 INSPECTED = PIECE_TAGS | {"home", "level", "wall", "room", "point", "furnitureGroup"}
 
@@ -657,6 +731,10 @@ def build_parser() -> argparse.ArgumentParser:
     for cmd in COMMANDS:
         sub.add_parser(cmd).add_argument("name")
     sub.choices["pull"].add_argument("--force", action="store_true", help="discard edits not yet pushed")
+    add = sub.add_parser("add-model", help="copy a furniture-library entry's model into the tree")
+    add.add_argument("name")
+    add.add_argument("--lib", type=Path, default=ROOT / "output" / "sh3d" / "coupled-windows.sh3f")
+    add.add_argument("--entry", required=True, help="catalogue id, e.g. floorplan3d#coupledWindow100x140")
     dtd = sub.add_parser("dtd")
     dtd.add_argument("--src-zip", type=Path, default=SRC_ZIP)
     dtd.add_argument("--src-zip-sha256", default=SRC_ZIP_SHA256)
@@ -673,6 +751,9 @@ def main(argv: list[str] | None = None) -> int:
             check_name(args.name)
             if args.cmd == "pull":
                 pull(roots, args.name, force=args.force)
+            elif args.cmd == "add-model":
+                sync(roots, args.name)
+                add_model(roots, args.name, args.lib, args.entry)
             else:
                 if args.cmd != "push":  # push keeps refusing a GUI save: both sides may hold edits
                     sync(roots, args.name)
