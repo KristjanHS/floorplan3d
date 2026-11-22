@@ -268,16 +268,33 @@ def pull(roots: Roots, name: str, force: bool = False) -> None:
 def sync(roots: Roots, name: str) -> None:
     """Auto-pull: homes/<name>.sh3d saved in the GUI since the last pull -> pull + commit sh3d_src/<name>.
     Refuses like pull does (uncommitted or unpushed edits in the tree), so nothing is overwritten."""
-    sh3d, meta = roots.sh3d(name), roots.tree(name) / META
-    if not (sh3d.is_file() and meta.is_file()):
+    sh3d, meta_path = roots.sh3d(name), roots.tree(name) / META
+    if not (sh3d.is_file() and meta_path.is_file()):
         return
-    if sha256_file(sh3d) == json.loads(meta.read_text(encoding="utf-8"))["source_sha256"]:
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise Sh3dError(f"{meta_path} is not valid JSON: {e}") from e
+    if not isinstance(meta, dict):
+        raise Sh3dError(f"{meta_path} is not a JSON object")
+    if sha256_file(sh3d) == meta.get("source_sha256"):
         return
-    pull(roots, name)
+    if "files" not in meta:  # pull skips its unpushed-edits check on such meta: never pull it unasked
+        raise Sh3dError(f"{name} saved in SH3D but {meta_path} is older meta — run make pull NAME={name} explicitly")
+    try:
+        pull(roots, name)
+    except zipfile.BadZipFile as e:
+        raise Sh3dError(f"{sh3d} is not a readable zip ({e}) — still being saved? retry when SH3D is done") from e
     src = str(roots.src.resolve())
-    subprocess.run(["git", "-C", src, "add", "-A", "--", name], check=True)
     msg = f"sh3d_src({name}): auto-pull GUI save"
-    subprocess.run(["git", "-C", src, "commit", "-q", "-m", msg, "--", name], check=True)
+    for cmd in (["add", "-A", "--", name], ["commit", "-q", "-m", msg, "--", name]):
+        done = subprocess.run(["git", "-C", src, *cmd], capture_output=True, text=True, check=False)
+        if done.returncode != 0:
+            err = (done.stderr or done.stdout).strip()
+            raise Sh3dError(
+                f"auto-pull: {name} pulled but git {cmd[0]} failed: {err}\n"
+                f"fix that, then commit it: git -C {src} commit -- {name}"
+            )
     print(f"auto-pull: {name} saved in SH3D since the last pull — pulled and committed")
 
 

@@ -470,3 +470,30 @@ def test_auto_pull_refuses_unpushed_edits(roots: sh3d.Roots, pulled: Path, capsy
     assert run(roots, "validate", "x") == 1
     assert "x has edits not yet pushed" in capsys.readouterr().err
     assert b"x='101'" in (pulled / "Home.xml").read_bytes()
+
+
+def test_auto_pull_commit_rejected_is_sh3d_error(
+    roots: sh3d.Roots, pulled: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    commit(roots.src)
+    hooks = roots.src / ".git" / "hooks"
+    (hooks / "pre-commit").write_text("#!/bin/sh\necho 'hook says no' >&2\nexit 1\n")
+    (hooks / "pre-commit").chmod(0o755)
+    git(roots.src, "config", "core.hooksPath", str(hooks))  # a global hooksPath would skip .git/hooks
+    make_sh3d(roots.sh3d("x"), ENTRIES[1:])
+    assert run(roots, "validate", "x") == 1
+    err = capsys.readouterr().err
+    assert err.startswith("sh3d: auto-pull: x pulled but git commit failed:") and "hook says no" in err
+    assert f"git -C {roots.src.resolve()} commit -- x" in err and "Traceback" not in err
+
+
+def test_auto_pull_refuses_older_meta(roots: sh3d.Roots, pulled: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    meta = json.loads((pulled / sh3d.META).read_text())
+    del meta["files"]
+    (pulled / sh3d.META).write_text(json.dumps(meta))
+    edit_xml(pulled, b"x='100'", b"x='101'")  # unpushed edit pull could not see without "files"
+    commit(roots.src)
+    make_sh3d(roots.sh3d("x"), ENTRIES[1:])
+    assert run(roots, "validate", "x") == 1
+    assert "older meta — run make pull NAME=x explicitly" in capsys.readouterr().err
+    assert b"x='101'" in (pulled / "Home.xml").read_bytes()

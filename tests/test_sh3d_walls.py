@@ -1,11 +1,14 @@
 import subprocess
+import zipfile
 from pathlib import Path
 
 import cv2
 import numpy as np
 import pytest
 from lxml import etree
+from test_sh3d import make_sh3d
 
+import sh3d
 import sh3d_walls
 
 BG = "<backgroundImage image='{img}' scaleDistance='100' scaleDistanceXStart='10' scaleDistanceYStart='20' scaleDistanceXEnd='10' scaleDistanceYEnd='70'{origin}/>"
@@ -87,7 +90,10 @@ def test_overlay_skips_auto_walls_and_names_trace(tmp_path: Path, capsys: pytest
     walls = WALL.format(id="w1", y=100, prop="") + WALL.format(id="auto-1", y=150, prop=auto)
     home = HOME.format(home_bg="", l0_bg=BG.format(img="0", origin="")).replace("</home>", walls + "</home>")
     (src / "x" / "Home.xml").write_text(home)
-    assert sh3d_walls.main(["--src", str(src), "--work", str(work), "overlay", "x"]) == 0
+    assert (
+        sh3d_walls.main(["--homes", str(tmp_path / "homes"), "--src", str(src), "--work", str(work), "overlay", "x"])
+        == 0
+    )
     assert capsys.readouterr().out.startswith("L0: 1 walls, ink 1.00, image = a_trace.png")
     out = cv2.imread(str(work / "walls" / "x-L0.png"))
     assert out is not None and out.shape == (300, 300, 3)
@@ -112,7 +118,9 @@ def test_rooms_dry_run_draws_walls_and_holes_without_writing(
     home = HOME.format(home_bg="", l0_bg=BG.format(img="0", origin="")).replace("</home>", rooms + "</home>")
     (src / "x" / "Home.xml").write_text(home)
     before = (src / "x" / "Home.xml").read_bytes()
-    assert sh3d_walls.main(["--src", str(src), "--work", str(work), "rooms", "x"]) == 0
+    assert (
+        sh3d_walls.main(["--homes", str(tmp_path / "homes"), "--src", str(src), "--work", str(work), "rooms", "x"]) == 0
+    )
     assert capsys.readouterr().out.startswith("L0: 3 rooms, 1 walls 15.0-15.0 cm, 1 holes (64 cm) -> ")
     assert (src / "x" / "Home.xml").read_bytes() == before
     out = cv2.imread(str(work / "walls" / "x-L0-rooms.png"))
@@ -166,7 +174,16 @@ def git(cwd: Path, *args: str) -> None:
 
 
 def write_cli(tmp_path: Path) -> list[str]:
-    return ["--src", str(tmp_path / "src"), "--work", str(tmp_path / "work"), "write", "x"]
+    return [
+        "--homes",
+        str(tmp_path / "homes"),
+        "--src",
+        str(tmp_path / "src"),
+        "--work",
+        str(tmp_path / "work"),
+        "write",
+        "x",
+    ]
 
 
 @pytest.fixture
@@ -223,3 +240,20 @@ def test_write_refuses_dirty_tree(home_src: Path, tmp_path: Path) -> None:
     home_src.write_text(WRITE_HOME + "\n")
     assert sh3d_walls.main(write_cli(tmp_path)) == 1
     assert home_src.read_text() == WRITE_HOME + "\n"
+
+
+def test_write_auto_pulls_gui_save_first(tmp_path: Path) -> None:
+    work, src = tmp_path / "work", tmp_path / "src"
+    (work / "sh3d").mkdir(parents=True)
+    (work / "sh3d" / "SweetHome3D.dtd").write_text(WRITE_DTD)
+    src.mkdir()
+    git(src, "init", "-q")
+    roots = sh3d.Roots(homes=tmp_path / "homes", src=src, backups=tmp_path / "b", work=work, dtd=work / "d")
+    make_sh3d(roots.sh3d("x"), [("Home.xml", WRITE_HOME.encode(), zipfile.ZIP_DEFLATED)])
+    sh3d.pull(roots, "x")
+    git(src, "add", "-A")
+    git(src, "commit", "-q", "-m", "pull")
+    saved = WRITE_HOME.replace("name='t'", "name='gui'")
+    make_sh3d(roots.sh3d("x"), [("Home.xml", saved.encode(), zipfile.ZIP_DEFLATED)])
+    assert sh3d_walls.main(write_cli(tmp_path)) == 0
+    assert "name='gui'" in (src / "x" / "Home.xml").read_text()  # write ran on the GUI save, not the stale tree
