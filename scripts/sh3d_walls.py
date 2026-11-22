@@ -1,4 +1,4 @@
-"""Auto walls <-> Home.xml: background px<->cm transform, traced walls, tagged write. Plan: docs/plans/2026-11-21-sh3d-auto-walls.md."""
+"""Auto walls <-> Home.xml: background px<->cm transform, traced walls, tagged write. Plan: docs/plans/archive/2026-11-21-sh3d-auto-walls.md."""
 
 import argparse
 import codecs

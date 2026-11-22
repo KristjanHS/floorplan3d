@@ -1,4 +1,4 @@
-"""Wall geometry, no XML: LSD face segments -> parallel pairs -> merged, snapped centre lines. Plan: docs/plans/2026-11-21-sh3d-auto-walls.md."""
+"""Wall geometry, no XML: LSD face segments -> parallel pairs -> merged, snapped centre lines. Plan: docs/plans/archive/2026-11-21-sh3d-auto-walls.md."""
 
 import math
 from dataclasses import dataclass, field

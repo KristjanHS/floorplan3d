@@ -1,6 +1,6 @@
 # SH3D auto walls — generate internal walls into Home.xml, user fixes in the GUI
 
-Status: in progress — Stages 1–3.1, R.1–R.3, 5 committed (5.1 tag + id survive an SH3D move/save); image stages 3.2–4 parked; next Stage 6. Goal: `make walls NAME=<name>` writes detected walls into `sh3d_src/<NAME>/Home.xml`, tagged as generated;
+Status: ✅ SHIPPED 2026-11-22 — Stages 1–3.1, R.1–R.3, 5, 6 committed; live run on the real home GO in SH3D; image stages 3.2–4 parked (not built). Goal: `make walls NAME=<name>` writes detected walls into `sh3d_src/<NAME>/Home.xml`, tagged as generated;
 the user then edits (not traces) them in SweetHome3D. Measured results (scores, overlay verdicts) → a local results doc, never here.
 
 ## Rulings (user, 2026-11-21)
@@ -9,6 +9,8 @@ the user then edits (not traces) them in SweetHome3D. Measured results (scores, 
 - Bar: hand-traced walls with thickness inside `GAP_CM` = ground truth (thicker exterior walls excluded). Traced wall matched ⇔ a generated wall within 10 cm centre-line distance and 3°. PASS ≥ 70 % per level; extras reported, not gated.
 - Internal only = skip generated walls matching a traced wall (no thickness cap). Edited auto wall on re-run = adopt (untag, keep). Height = the wall's level `height`.
 - Detect on the level's embedded background image (it is the trace PNG — no second px frame).
+- (2026-11-22) GUI-deleted auto wall stays deleted: home `<property>` tombstones `floorplan3d.auto.written` / `floorplan3d.auto.deleted`.
+- (2026-11-22) `validate`/`inspect`/`preview`/`walls-*` auto-pull + commit an unpulled GUI save first (refuse a dirty `sh3d_src/<NAME>`).
 - Re-run replaces ONLY tagged walls; hand-traced walls never touched. `make push NAME=` repacks unchanged.
 - `scripts/preprocess.py` `wall_mask` is NOT reused (fails on double-line + hatching walls).
 - (2026-11-22) Hatch: axis-only faces (0°/90° ± `PARALLEL_DEG`); diagonal walls are hand-traced. Score: coverage = union of matching pieces; zero-traced level → n/a, overall FAIL.
