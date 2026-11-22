@@ -29,21 +29,19 @@ Vec = tuple[float, float, float]
 Box = tuple[float, float, float, float, float, float]  # x0, x1, y0, y1, z0, z1
 
 # Profile dimensions, cm.
-DEPTH = 14.0  # frame depth, exterior to room face
+DEPTH = 13.0  # both sash layers together = frame depth, exterior to room face
 FRAME = 6.0  # frame face width
-STOP = 1.5  # exterior stop lip, reaching into the opening
-STOP_DEPTH = 1.0
 CLEAR = 0.3  # sash-to-frame gap
 INNER_FACE, INNER_T = 5.5, 5.5  # inner sash face width, thickness
 OUTER_FACE, OUTER_T = 5.0, 4.5
 INNER_GLASS, OUTER_GLASS = 2.4, 0.4
 GLASS_BITE = 1.0  # glass edge hidden inside the sash profile
-OUTER_Z0 = STOP_DEPTH + 0.2  # outer sash back face
+OUTER_Z0 = 0.0  # outer sash flush with the frame's exterior face
 INNER_Z0 = DEPTH - INNER_T  # inner sash flush with the frame's room face
 HINGE = 1.0  # hinge knuckle cross-section
 HINGE_LEN = 8.0
 HINGE_INSET = 15.0  # hinge distance from the sash top/bottom
-HANDLE_PROJ = 5.0  # handle reach past the room face; part of the model's bbox depth
+HANDLE_PROJ = 4.5  # handle reach past the room face; part of the model's bbox depth
 MODEL_DEPTH = DEPTH + HANDLE_PROJ
 ELEVATION = 90.0  # default sill height
 
@@ -116,8 +114,7 @@ def window_groups(width: float, height: float) -> list[Group]:
         Group(
             "frame",
             "wood",
-            ring(0, width, 0, height, 0, DEPTH, FRAME)
-            + ring(FRAME - 0.5, width - FRAME + 0.5, FRAME - 0.5, height - FRAME + 0.5, 0, STOP_DEPTH, STOP + 0.5),
+            ring(0, width, 0, height, 0, DEPTH, FRAME),
         ),
         Group("sweethome3d_hinge_1", "hardware", hinges),
         Group(
