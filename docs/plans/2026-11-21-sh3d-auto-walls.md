@@ -1,6 +1,6 @@
 # SH3D auto walls — generate internal walls into Home.xml, user fixes in the GUI
 
-Status: in progress — Stages 1–3.1 + R.1–R.3 committed; image stages 3.2–4 parked (rooms ruling); next [USER] R.2 eyeball → Stage 5. Goal: `make walls NAME=<name>` writes detected walls into `sh3d_src/<NAME>/Home.xml`, tagged as generated;
+Status: in progress — Stages 1–3.1 + R.1–R.3 committed, R.2 GO; image stages 3.2–4 parked (rooms ruling); next Stage 5. Goal: `make walls NAME=<name>` writes detected walls into `sh3d_src/<NAME>/Home.xml`, tagged as generated;
 the user then edits (not traces) them in SweetHome3D. Measured results (scores, overlay verdicts) → a local results doc, never here.
 
 ## Rulings (user, 2026-11-21)
@@ -12,7 +12,8 @@ the user then edits (not traces) them in SweetHome3D. Measured results (scores, 
 - Re-run replaces ONLY tagged walls; hand-traced walls never touched. `make push NAME=` repacks unchanged.
 - `scripts/preprocess.py` `wall_mask` is NOT reused (fails on double-line + hatching walls).
 - (2026-11-22) Hatch: axis-only faces (0°/90° ± `PARALLEL_DEG`); diagonal walls are hand-traced. Score: coverage = union of matching pieces; zero-traced level → n/a, overall FAIL.
-- (2026-11-22) Wall source = gaps between traced rooms, and room ↔ traced-wall face: gap in `ROOM_GAP_CM` (1–40) → wall centred in it, thickness = gap; 0 = open. Image stages 3.2–4 parked.
+- (2026-11-22) Wall source = gaps between traced rooms, and room ↔ traced-wall face: gap in `ROOM_GAP_CM` (1–40) → wall centred in it, thickness = gap; 0 = open;
+  room ↔ traced-wall gap < `ROOM_SLACK_CM` (10) = touching (tracing slack). Image stages 3.2–4 parked. R.2 eyeball GO → Stage 5.
 
 ## Known facts (SH3D 7.6.1 source, `work/sh3d-src/`)
 - Background px → plan cm: `x = u·s − xOrigin`, `y = v·s − yOrigin`, `s = scaleDistance / |start−end|`; scale points in image px, origins in cm

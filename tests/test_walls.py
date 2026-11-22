@@ -255,6 +255,13 @@ def test_gap_walls_room_to_wall_face_snaps_to_anchor() -> None:
     assert sorted([w.p1, w.p2]) == [pytest.approx((9.75, -22.5)), pytest.approx((9.75, 200))]
 
 
+def test_gap_walls_room_slack_to_wall_face_is_touching() -> None:
+    outer = Wall((-22.5, -100), (-22.5, 300), 45)  # inner face x = 0
+    assert walls.gap_walls([rect(3, 0, 300, 200)], [outer]) == []
+    (w,) = walls.gap_walls([rect(-100, 0, 0, 200), rect(3, 0, 300, 200)], [])  # same 3 cm between rooms: a wall
+    assert w.thickness == pytest.approx(3)
+
+
 def test_gap_walls_skip_anchor_to_anchor_gaps() -> None:
     a, b = Wall((0, 0), (0, 300), 20), Wall((30, 0), (30, 300), 20)  # faces 10 cm apart, no room between
     assert walls.gap_walls([], [a, b]) == []

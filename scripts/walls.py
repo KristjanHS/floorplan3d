@@ -16,6 +16,7 @@ MIN_OVERLAP = 0.6
 MERGE_OFFSET_CM, MERGE_GAP_CM, MERGE_DEG = 5.0, 100.0, 2.0
 SNAP_CM = 15.0
 ROOM_GAP_CM = (1.0, 40.0)  # an empty strip this wide between traced rooms is a wall; touching rooms are open
+ROOM_SLACK_CM = 10.0  # a room edge this close to a traced wall's face touches it (tracing slack): no wall
 ROOM_MIN_OVERLAP_CM = 10.0
 HOLE_CM = 100.0  # a room strip wider than ROOM_GAP_CM up to this is flagged for the eyeball, never written
 MATCH_DIST_CM, MATCH_DEG, MATCH_COVER = 10.0, 3.0, 0.5
@@ -296,7 +297,8 @@ def gap_walls(rooms: list[list[Point]], anchors: list[Wall], gap_cm: tuple[float
             continue
         overlap, gap, p, q = _between(a, b)
         if overlap >= ROOM_MIN_OVERLAP_CM and gap <= hi:  # touching pairs (gap < lo) claim their stretch, then drop
-            cands.append((gap, i, j, p, q))
+            slack = not (ra and rb) and gap < ROOM_SLACK_CM
+            cands.append((0.0 if slack else gap, i, j, p, q))
     claimed = [(w, c) for w, c in _claim(cands, [e for _, e in edges], 5.0, ROOM_MIN_OVERLAP_CM) if w.thickness >= lo]
     # clipped pieces skip merge: MERGE_GAP_CM would bridge the claimed stretch between them
     merged = merge([w for w, c in claimed if not c], 1.0) + [w for w, c in claimed if c]
