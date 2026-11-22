@@ -144,6 +144,9 @@ def sashes(width: float, leaves: tuple[Leaf, ...]) -> list[Sash]:
 
 def check_size(width: float, height: float, leaves: tuple[Leaf, ...] = SINGLE) -> None:
     """Smallest size whose coupling bars (vent doors: knob) and hinge knuckles don't run into each other."""
+    if len(sashes(width, leaves)) > 9:
+        # SH3D matches sash parts by name prefix, so sweethome3d_hinge_1 would also claim hinge_10.
+        raise ValueError(f"window {spec_label(Spec(width, height, leaves))} has more than 9 sashes")
     too_narrow = any(s.x1 - s.x0 < (VENT_MIN if s.vent else 2 * (BAR_INSET + BAR_W) + 5) for s in sashes(width, leaves))
     if too_narrow or height < 2 * (FRAME + CLEAR + HINGE_INSET) + HINGE_LEN:
         raise ValueError(f"window {spec_label(Spec(width, height, leaves))} cm is too small for its profiles")
@@ -179,7 +182,7 @@ def sash_groups(n: int, s: Sash, height: float) -> list[Group]:
         kx = sx1 - 1.5 - KNOB / 2
         knob = [
             (kx - 1.5, kx + 1.5, hcy - 1.5, hcy + 1.5, inner_z1, inner_z1 + 0.5),  # rosette
-            (kx - KNOB / 2, kx + KNOB / 2, hcy - KNOB / 2, hcy + KNOB / 2, inner_z1 + 0.5, inner_z1 + 3.0),
+            (kx - KNOB / 2, kx + KNOB / 2, hcy - KNOB / 2, hcy + KNOB / 2, inner_z1 + 0.5, inner_z1 + HANDLE_PROJ),
         ]
         groups = [
             hinges,
@@ -386,10 +389,10 @@ def parse_size(text: str) -> Spec:
         for lm in (re.fullmatch(rf"({NUM})([LRD])(v?)", c) for c in m.group(3).split(","))
         if lm
     )
-    if len(leaves) == 1:
-        leaves = (leaves[0]._replace(weight=1.0),)  # a lone leaf's weight means nothing
     if any(leaf.weight <= 0 for leaf in leaves):
         raise argparse.ArgumentTypeError(f"size '{text}': leaf weights must be > 0")
+    if len(leaves) == 1:
+        leaves = (leaves[0]._replace(weight=1.0),)  # a lone leaf's weight means nothing
     return Spec(float(m.group(1)), float(m.group(2)), leaves)
 
 

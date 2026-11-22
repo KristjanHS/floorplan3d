@@ -550,7 +550,13 @@ def test_add_model_registers_entries_push_packs_them(
     assert run(roots, "add-model", "x", "--lib", str(window_lib), "--entry", entry) == 0
     out = capsys.readouterr().out
     # The fixture home holds entries 0 and 1: the model dir is next, its icon after it.
-    assert "model='2/window.obj' icon='3'" in out and "doorOrWindowSashStartAngle=0 180 180" in out
+    assert "model='2/window.obj' icon='3'" in out and f"commit {pulled}" in out
+    # Home.xml takes sashes as <sash> children: axes/width as fractions of the size, angles in radians.
+    sashes = [dict(re.findall(r"(\w+)='([^']*)'", line)) for line in out.splitlines() if "<sash " in line]
+    assert len(sashes) == 3  # the D column's pair, then the R leaf
+    assert sashes[1]["startAngle"] == "3.14159" and sashes[0]["endAngle"] == "-1.5708"
+    assert all(0 < float(s[k]) < 1 for s in sashes for k in ("xAxis", "width"))
+    assert "wallThickness='" in out and "doorOrWindowSash" not in out
     assert run(roots, "push", "x") == 0
     with zipfile.ZipFile(window_lib) as lib, zipfile.ZipFile(roots.sh3d("x")) as home:
         for theirs, ours in (("window.obj", "2/window.obj"), ("window.mtl", "2/window.mtl"), ("icon.png", "3")):
@@ -569,3 +575,17 @@ def test_add_model_refuses_unknown_entry_and_a_second_copy(
     assert run(roots, "add-model", "x", "--lib", str(window_lib), "--entry", entry) == 1
     assert "already in" in capsys.readouterr().err
     assert sorted(p.name for p in pulled.iterdir() if p.name[0].isdigit()) == ["0", "1", "2", "3"]
+
+
+def test_add_model_refuses_a_library_missing_its_model(
+    roots: sh3d.Roots, pulled: Path, window_lib: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    broken = window_lib.with_name("broken.sh3f")
+    with zipfile.ZipFile(window_lib) as src, zipfile.ZipFile(broken, "w") as dst:
+        for info in src.infolist():
+            if info.filename != "coupledWindow100x140/window.obj":
+                dst.writestr(info, src.read(info))
+    entry = "floorplan3d#coupledWindow100x140"
+    assert run(roots, "add-model", "x", "--lib", str(broken), "--entry", entry) == 1
+    assert "is not in the library" in capsys.readouterr().err
+    assert sorted(p.name for p in pulled.iterdir() if p.name[0].isdigit()) == ["0", "1"]

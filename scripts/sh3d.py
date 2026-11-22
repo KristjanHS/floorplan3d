@@ -3,6 +3,7 @@
 import argparse
 import codecs
 import hashlib
+import html
 import io
 import json
 import math
@@ -504,7 +505,53 @@ def read_library_entry(lib: Path, entry_id: str) -> tuple[dict[str, str], dict[s
             if PurePosixPath(n).parent == model.parent and not n.endswith("/") and n != icon
         }
         icon_data = zf.read(icon)
+    if model.name not in files:
+        raise Sh3dError(f"{entry_id!r} in {lib}: model {entry['model']} is not in the library")
     return entry, files, model, icon_data
+
+
+def home_xml_lines(entry: dict[str, str], model: str, icon: str) -> list[str]:
+    """Home.xml attributes (and <sash> children) for a piece made from catalogue `entry`, converted
+    as SH3D's DefaultFurnitureCatalog does: wall thickness/distance and sash yAxis as fractions of
+    depth, sash xAxis/width as fractions of width, angles in radians."""
+
+    def attr(key: str, value: str) -> str:
+        return f"{key}='{html.escape(value)}'"
+
+    lines = [
+        " ".join(
+            [attr("model", model), attr("icon", icon), attr("catalogId", entry.get("id", ""))]
+            + [attr(k, entry.get(k, "")) for k in ("name", "creator")]
+        ),
+        " ".join(attr(k, entry[k]) for k in ("width", "depth", "height", "elevation") if k in entry),
+    ]
+    if entry.get("doorOrWindow") != "true":
+        return lines
+    width, depth = float(entry["width"]), float(entry["depth"])
+
+    def frac(value: float) -> str:
+        return f"{value:g}"
+
+    wall = [
+        attr("wallThickness", frac(float(entry.get("doorOrWindowWallThickness", depth)) / depth)),
+        attr("wallDistance", frac(float(entry.get("doorOrWindowWallDistance", 0)) / depth)),
+    ]
+    if "doorOrWindowCutOutShape" in entry:
+        wall.append(attr("cutOutShape", entry["doorOrWindowCutOutShape"]))
+    wall += [
+        attr("widthDepthDeformable", entry.get("doorOrWindowWidthDepthDeformable", "true")),
+        attr("wallCutOutOnBothSides", entry.get("doorOrWindowWallCutOutOnBothSides", "true")),
+    ]
+    lines.append(" ".join(wall))
+    if "doorOrWindowSashXAxis" not in entry:
+        return lines
+    keys = ("XAxis", "YAxis", "Width", "StartAngle", "EndAngle")
+    columns = [[float(v) for v in entry[f"doorOrWindowSash{k}"].split()] for k in keys]
+    for x, y, w, start, end in zip(*columns, strict=True):
+        values = (x / width, y / depth, w / width, math.radians(start), math.radians(end))
+        sash = " ".join(attr(k[0].lower() + k[1:], frac(v)) for k, v in zip(keys, values, strict=True))
+        lines.append(f"<sash {sash}/>")
+    return lines
 
 
 def add_model(roots: Roots, name: str, lib: Path, entry_id: str) -> None:
@@ -529,7 +576,10 @@ def add_model(roots: Roots, name: str, lib: Path, entry_id: str) -> None:
     n = max((int(t) for t in tops if t.isdigit()), default=-1) + 1
     for path in (tree / str(n), tree / str(n + 1)):
         if path.exists():
-            raise Sh3dError(f"{path} exists but is not in {META} — pull again")
+            raise Sh3dError(
+                f"{path} exists but is not in {META} — a leftover entry (pull would refuse it as an unpushed"
+                f" edit): delete it, then re-run add-model (or make pull NAME={name} once it is gone)"
+            )
     (tree / str(n)).mkdir()
     for fname, data in files.items():
         (tree / str(n) / fname).write_bytes(data)
@@ -539,14 +589,10 @@ def add_model(roots: Roots, name: str, lib: Path, entry_id: str) -> None:
     meta["entries"] += [{"name": f"{n}/{fname}", "compress_type": deflated} for fname in sorted(files)]
     meta["entries"] += [{"name": str(n + 1), "compress_type": deflated}]
     meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
-    print(f"add-model: {entry_id} -> model='{n}/{model.name}' icon='{n + 1}' — set on the piece in Home.xml:")
-    print(f"  catalogId='{entry_id}' name='{entry.get('name', '')}' creator='{entry.get('creator', '')}'")
-    for key in ("width", "depth", "height", "elevation"):
-        if key in entry:
-            print(f"  {key}={entry[key]}")
-    for key, value in entry.items():
-        if key.startswith("doorOrWindow") and key != "doorOrWindow":
-            print(f"  {key}={value}")
+    print(f"add-model: {entry_id} -> {n}/{model.name} + icon {n + 1} — set on the piece in Home.xml:")
+    for line in home_xml_lines(entry, f"{n}/{model.name}", str(n + 1)):
+        print(f"  {line}")
+    print(f"add-model: then commit {tree}")
 
 
 PIECE_TAGS = frozenset({"pieceOfFurniture", "light", "doorOrWindow"})

@@ -103,7 +103,7 @@ def test_parse_size_rejects_garbage() -> None:
     vented = sw.parse_size("200x150=36Lv,164R")
     assert sw.parse_size("180x220=90D").leaves == (sw.Leaf(1, "D"),)
     assert vented.leaves == (sw.Leaf(36, "L", vent=True), sw.Leaf(164, "R"))
-    for bad in ("200x150=36X", "200x150=0L,10R", "200x150="):
+    for bad in ("200x150=36X", "200x150=0L,10R", "200x150=", "100x140=0L"):
         with pytest.raises(argparse.ArgumentTypeError):
             sw.parse_size(bad)
     with pytest.raises(argparse.ArgumentTypeError, match="<width>x<height>"):
@@ -175,7 +175,16 @@ def test_blinds_sit_in_the_gap_between_layers() -> None:
     assert len(blinds) * sw.BLIND_PITCH > PAIR.height - 2 * (sw.FRAME + sw.OUTER_FACE) - 2 * sw.BLIND_PITCH
 
 
-@pytest.mark.parametrize("spec", [VENTED, PAIR, POSTED])
+@pytest.mark.parametrize(
+    "spec",
+    [
+        VENTED,
+        PAIR,
+        POSTED,
+        sw.Spec(100, 140, (sw.Leaf(1, "L", vent=True),)),  # all vent: the knob alone sets the depth
+        sw.Spec(60, 140, (sw.Leaf(1, "D", vent=True),)),
+    ],
+)
 def test_multi_leaf_bbox_matches_catalogue_size(spec: sw.Spec) -> None:
     verts, _ = parse_obj(sw.obj_text(sw.window_groups(*spec)))
     entry = dict(line.split("=", 1) for line in sw.catalog_entry(1, *spec))
@@ -221,3 +230,10 @@ def test_too_narrow_columns_rejected() -> None:
     with pytest.raises(ValueError, match="too small"):
         sw.check_size(200, 150, (sw.Leaf(30), sw.Leaf(170, "R")))  # 30 is too narrow for a glazed leaf
     sw.check_size(*VENTED)
+
+
+def test_more_than_nine_sashes_rejected() -> None:
+    # SH3D claims sash parts by name prefix: hinge_1 would also grab hinge_10.
+    with pytest.raises(ValueError, match="more than 9 sashes"):
+        sw.check_size(500, 150, (sw.Leaf(1, "D"),) * 5)
+    sw.check_size(450, 150, (sw.Leaf(1, "D"),) * 4 + (sw.Leaf(1, "L"),))
