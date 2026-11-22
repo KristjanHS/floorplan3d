@@ -90,3 +90,29 @@ def test_overlay_skips_auto_walls_and_names_trace(tmp_path: Path, capsys: pytest
     assert capsys.readouterr().out.startswith("L0: 1 walls, ink 1.00, image = a_trace.png")
     out = cv2.imread(str(work / "walls" / "x-L0.png"))
     assert out is not None and out.shape == (300, 300, 3)
+
+
+ROOM = "<room level='L0'>{pts}</room>"
+
+
+def room(x0: float, y0: float, x1: float, y1: float) -> str:
+    pts = "".join(f"<point x='{x}' y='{y}'/>" for x, y in [(x0, y0), (x1, y0), (x1, y1), (x0, y1)])
+    return ROOM.format(pts=pts)
+
+
+def test_rooms_dry_run_draws_walls_and_holes_without_writing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    src, work = tmp_path / "src", tmp_path / "work"
+    (src / "x").mkdir(parents=True)
+    (src / "x" / "0").write_bytes(cv2.imencode(".png", np.full((300, 300), 255, np.uint8))[1].tobytes())
+    # 15 cm strip (wall), then a 64 cm strip (hole); level L1 has no background and is skipped
+    rooms = room(0, 0, 100, 200) + room(115, 0, 215, 200) + room(279, 0, 379, 200)
+    home = HOME.format(home_bg="", l0_bg=BG.format(img="0", origin="")).replace("</home>", rooms + "</home>")
+    (src / "x" / "Home.xml").write_text(home)
+    before = (src / "x" / "Home.xml").read_bytes()
+    assert sh3d_walls.main(["--src", str(src), "--work", str(work), "rooms", "x"]) == 0
+    assert capsys.readouterr().out.startswith("L0: 3 rooms, 1 walls 15.0-15.0 cm, 1 holes (64 cm) -> ")
+    assert (src / "x" / "Home.xml").read_bytes() == before
+    out = cv2.imread(str(work / "walls" / "x-L0-rooms.png"))
+    assert out is not None and (out == sh3d_walls.ORANGE).all(axis=2).any()

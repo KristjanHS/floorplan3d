@@ -17,6 +17,7 @@ MERGE_OFFSET_CM, MERGE_GAP_CM, MERGE_DEG = 5.0, 100.0, 2.0
 SNAP_CM = 15.0
 ROOM_GAP_CM = (1.0, 40.0)  # an empty strip this wide between traced rooms is a wall; touching rooms are open
 ROOM_MIN_OVERLAP_CM = 10.0
+HOLE_CM = 100.0  # a room strip wider than ROOM_GAP_CM up to this is flagged for the eyeball, never written
 MATCH_DIST_CM, MATCH_DEG, MATCH_COVER = 10.0, 3.0, 0.5
 PASS_RATIO = 0.70
 
@@ -265,10 +266,10 @@ def _faces(w: Wall) -> list[Wall]:
     return outward(ring)[::2]
 
 
-def gap_walls(rooms: list[list[Point]], anchors: list[Wall]) -> list[Wall]:
-    """Plan cm. A wall centred in each ROOM_GAP_CM strip a room edge faces (another room, or a traced anchor's face);
+def gap_walls(rooms: list[list[Point]], anchors: list[Wall], gap_cm: tuple[float, float] = ROOM_GAP_CM) -> list[Wall]:
+    """Plan cm. A wall centred in each `gap_cm`-wide strip a room edge faces (another room, or a traced anchor's face);
     merged, then snapped onto each other and the anchors (not returned). Anchor-to-anchor gaps are not rooms' business."""
-    lo, hi = ROOM_GAP_CM
+    lo, hi = gap_cm
     edges = [(True, e) for r in rooms for e in outward(r)]
     edges += [(False, f) for a in anchors if a.thickness > 0 for f in _faces(a)]
     cands: list[tuple[float, int, int, np.ndarray, np.ndarray]] = []
@@ -282,3 +283,8 @@ def gap_walls(rooms: list[list[Point]], anchors: list[Wall]) -> list[Wall]:
     claimed = [w for w in _claim(cands, [e for _, e in edges], 5.0) if w.thickness >= lo]
     merged = merge(claimed, 1.0)
     return snap(merged + anchors, 1.0)[: len(merged)]
+
+
+def holes(rooms: list[list[Point]], anchors: list[Wall]) -> list[Wall]:
+    """Strips too wide for a wall (ROOM_GAP_CM max .. HOLE_CM) a room edge faces with no nearer partner."""
+    return [w for w in gap_walls(rooms, anchors, (0.0, HOLE_CM)) if w.thickness > ROOM_GAP_CM[1]]

@@ -71,7 +71,8 @@ Recommend: NEW `scripts/walls.py` (pure numpy/cv2 geometry: segments, pairing, m
 ## Stage R — Walls from room gaps (replaces 3.2–4)
 - **R.1 `walls.gap_walls(rooms, anchors)`** (room polygons + traced walls) — `outward()` edges of room polygons + traced-wall long faces; facing parallel pairs with gap in `ROOM_GAP_CM` → centre wall; merge, snap onto traced walls.
   Tests: rooms 15 cm apart → one 15 cm wall; touching → none; room ↔ wall face 19.5 cm → wall snapped onto an anchor; narrow rooms' non-facing edges → none.
-- **R.2 `make walls-rooms NAME=`** dry run: generated (magenta) + traced (green) on each level image → `work/walls/<NAME>-L<i>-rooms.png`; Home.xml sha unchanged. [USER] eyeball → Stage 5 with source = rooms.
+- **R.2 `make walls-rooms NAME=`** dry run: room outlines (blue), generated (magenta), traced (green), holes = `walls.holes()` 40–`HOLE_CM` (100) cm strips (orange, counted) → `work/walls/<NAME>-L<i>-rooms.png`; Home.xml sha unchanged.
+  [USER] eyeball → Stage 5 with source = rooms.
 
 ## Stage 5 — Write-in (`make walls NAME=`)
 - **5.1 Tag survival check.** Tag = `<property name="floorplan3d.auto" value="<geometry sig>"/>` + id prefix `auto-`. Test: tagged wall in toy Home.xml passes `validate_errors`.

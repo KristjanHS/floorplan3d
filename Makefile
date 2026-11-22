@@ -10,7 +10,7 @@ UT := work/upstream-test
 SH3D_SRC_ZIP ?= work/sh3d-src/SweetHome3D-7.6.1-src.zip
 SH3D_DTD := work/sh3d/SweetHome3D.dtd
 SH3D := uv run python scripts/sh3d.py --dtd $(SH3D_DTD)
-SH3D_CMDS := pull push validate inspect preview walls-overlay
+SH3D_CMDS := pull push validate inspect preview walls-overlay walls-rooms
 
 ifneq ($(filter $(SH3D_CMDS),$(MAKECMDGOALS)),)
 # Command line only: WSL exports NAME=<hostname> into every shell.
@@ -42,6 +42,7 @@ help:
 	@echo "make probe FLOOR=<f> [TARGETS='id=x1,y1:x2,y2 ...'] [BASIS=<ds>] - per-stage wall loss of the last convert -> work/<f>/probe.json"
 	@echo "make pull|push|validate|inspect|preview NAME=<home> - SweetHome3D homes/<home>.sh3d <-> sh3d_src/<home>/"
 	@echo "make walls-overlay NAME=<home> - traced walls drawn on each level image -> work/walls/, prints ink-hit rate"
+	@echo "make walls-rooms NAME=<home> - dry run: walls from room gaps + 40-100 cm holes -> work/walls/<home>-L<i>-rooms.png"
 	@echo "make sh3d-dtd  - rebuild work/sh3d/SweetHome3D.dtd from SH3D_SRC_ZIP (validate/push run it)"
 	@echo "make upstream-test - upstream's own tests, sandboxed (no display tests)"
 	@echo "make audit    - uv audit: known vulnerabilities in uv.lock"
@@ -128,6 +129,9 @@ pull validate inspect preview:
 
 walls-overlay:
 	uv run python scripts/sh3d_walls.py overlay $(NAME)
+
+walls-rooms:
+	uv run python scripts/sh3d_walls.py rooms $(NAME)
 
 push:
 	$(SH3D) push $(NAME)

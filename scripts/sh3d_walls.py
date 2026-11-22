@@ -11,6 +11,7 @@ import numpy as np
 from lxml import etree
 
 import sh3d
+import walls as wl
 
 AUTO_PROP = "floorplan3d.auto"  # Stage 5 tag; tagged walls are never ground truth
 DARK = 128  # grey level below which a px counts as ink
@@ -82,7 +83,14 @@ def traced_walls(root: etree._Element) -> list[TracedWall]:
     return out
 
 
-def faces_px(wall: TracedWall, bg: LevelBackground) -> list[tuple[Point, Point]]:
+def room_rings(root: etree._Element) -> list[tuple[str | None, list[Point]]]:
+    return [
+        (r.get("level"), [(float(p.get("x", "")), float(p.get("y", ""))) for p in r.findall("point")])
+        for r in root.iter("room")
+    ]
+
+
+def faces_px(wall: TracedWall | wl.Wall, bg: LevelBackground) -> list[tuple[Point, Point]]:
     """Both wall faces (centre line offset +-thickness/2), in background image px."""
     (x1, y1), (x2, y2) = wall.p1, wall.p2
     length = math.dist(wall.p1, wall.p2) or 1.0
@@ -126,16 +134,52 @@ def overlay(src: Path, work: Path, name: str) -> None:
         print(f"L{i}: {len(faces) // 2} walls, ink {ink_rate(gray, faces):.2f}, image = {image} -> {out}")
 
 
+BLUE, GREEN, MAGENTA, ORANGE = (255, 0, 0), (0, 200, 0), (255, 0, 255), (0, 140, 255)  # BGR
+
+
+def rooms(src: Path, work: Path, name: str) -> None:
+    """Dry run, Home.xml untouched: walls from gaps between traced rooms, drawn per level for the eyeball."""
+    tree = src / name
+    root = sh3d.read_home(tree)
+    traced, rings = traced_walls(root), room_rings(root)
+    out_dir = work / "walls"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for i, bg in enumerate(level_backgrounds(root, tree)):
+        gray = cv2.imread(str(bg.image), cv2.IMREAD_GRAYSCALE)
+        if gray is None:
+            raise sh3d.Sh3dError(f"{bg.image}: not a readable image")
+        level_rooms = [r for lv, r in rings if lv == bg.level_id and len(r) >= 3]
+        anchors = [wl.Wall(w.p1, w.p2, w.thickness) for w in traced if w.level_id == bg.level_id]
+        gen, hol = wl.gap_walls(level_rooms, anchors), wl.holes(level_rooms, anchors)
+        canvas = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+        for ring in level_rooms:
+            pts = np.rint([bg.cm_to_px(x, y) for x, y in ring]).astype(np.int32)
+            cv2.polylines(canvas, [pts], True, BLUE, 1)
+        for group, colour, width in ((anchors, GREEN, 1), (gen, MAGENTA, 1), (hol, ORANGE, 2)):
+            for w in group:
+                for (u1, v1), (u2, v2) in faces_px(w, bg):
+                    cv2.line(canvas, (round(u1), round(v1)), (round(u2), round(v2)), colour, width)
+        out = out_dir / f"{name}-L{i}-rooms.png"
+        cv2.imwrite(str(out), canvas)
+        span = f" {min(w.thickness for w in gen):.1f}-{max(w.thickness for w in gen):.1f} cm" if gen else ""
+        widths = f" ({', '.join(f'{w.thickness:.0f}' for w in hol)} cm)" if hol else ""
+        print(f"L{i}: {len(level_rooms)} rooms, {len(gen)} walls{span}, {len(hol)} holes{widths} -> {out}")
+
+
+COMMANDS = {"overlay": overlay, "rooms": rooms}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="sh3d_walls", description=__doc__)
     parser.add_argument("--src", type=Path, default=sh3d.ROOT / "sh3d_src")
     parser.add_argument("--work", type=Path, default=sh3d.ROOT / "work")
     sub = parser.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("overlay").add_argument("name")
+    for cmd in COMMANDS:
+        sub.add_parser(cmd).add_argument("name")
     args = parser.parse_args(argv)
     try:
         sh3d.check_name(args.name)
-        overlay(args.src, args.work, args.name)
+        COMMANDS[args.cmd](args.src, args.work, args.name)
     except sh3d.Sh3dError as e:
         print(f"sh3d_walls: {e}", file=sys.stderr)
         return 1
