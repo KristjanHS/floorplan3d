@@ -11,6 +11,7 @@ import measure
 import plans
 
 BLENDER = shutil.which("blender")
+pytestmark = pytest.mark.blender
 CAL = plans.Calibration((0.0, 0.0), (200.0, 0.0), 5.0)  # 0.025 m/px: not the export test's 0.01
 KLK = (482.5, 100.0)  # inside the example's KLK room, between its left and right walls
 

@@ -14,7 +14,7 @@ BLENDER = shutil.which("blender")
 CAL = plans.Calibration((100.0, 100.0), (500.0, 100.0), 4.0)  # 400 px = 4 m -> 0.01 m/px
 SUFFIXES = (".blend", ".glb", ".obj", "_top.png", "_persp.png")
 
-pytestmark = pytest.mark.skipif(BLENDER is None, reason="blender not on PATH")
+pytestmark = [pytest.mark.blender, pytest.mark.skipif(BLENDER is None, reason="blender not on PATH")]
 
 
 def points(nested: list):

@@ -9,6 +9,8 @@ import claude_upstream_hook as hook
 import plans
 import sandbox
 
+pytestmark = pytest.mark.ftb
+
 PYTHON = str(plans.ROOT / ".venv" / "bin" / "python")
 SCRIPTS = plans.ROOT / "scripts"
 

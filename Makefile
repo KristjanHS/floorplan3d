@@ -26,14 +26,15 @@ $(error NAME='$(NAME)' must match [A-Za-z0-9_-]+)
 endif
 endif
 
-.PHONY: help sync check whitespace lint fmt test audit push-gate setup-hooks pre-commit upstream-test preprocess convert export models probe sh3d-dtd $(SH3D_CMDS)
+.PHONY: help sync check whitespace lint fmt test test-legacy audit push-gate setup-hooks pre-commit upstream-test preprocess convert export models probe sh3d-dtd $(SH3D_CMDS)
 
 help:
 	@echo "make sync     - uv sync (locked, all groups) + uv pip check"
 	@echo "make check    - verification gate (syncwt runs it): whitespace + lint + test"
 	@echo "make lint     - ruff check + ruff format --check + pyright"
 	@echo "make fmt      - ruff check --fix + ruff format (rewrites files)"
-	@echo "make test     - pytest (skips while tests/ is absent)"
+	@echo "make test     - pytest minus legacy blender/ftb tests (skips while tests/ is absent)"
+	@echo "make test-legacy - only the legacy Blender/FTB pipeline tests"
 	@echo "make models     - preprocess -> convert -> export, per floor, only steps whose inputs changed"
 	@echo "make preprocess - PDFs in plans.yaml -> work/<floor>.png + _grid.png + .json"
 	@echo "make convert    - sandboxed upstream run per floor -> work/<floor>/<floor>_raw.blend"
@@ -71,8 +72,12 @@ fmt:
 	uv run ruff check --fix .
 	uv run ruff format .
 
+# Legacy Blender/FTB pipeline tests are opt-in: make test-legacy.
 test:
-	@if [ -d tests ]; then uv run pytest -q || [ $$? -eq 5 ]; else echo "pytest: no tests/ yet"; fi
+	@if [ -d tests ]; then uv run pytest -q -m "not blender and not ftb" || [ $$? -eq 5 ]; else echo "pytest: no tests/ yet"; fi
+
+test-legacy:
+	uv run pytest -q -m "blender or ftb"
 
 preprocess:
 	uv run python scripts/preprocess.py

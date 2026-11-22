@@ -10,6 +10,8 @@ import pytest
 import plans
 import preprocess
 
+pytestmark = pytest.mark.ftb
+
 SKEW = 3.0
 
 

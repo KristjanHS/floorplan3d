@@ -8,6 +8,8 @@ import pytest
 import pipeline_mk
 import plans
 
+pytestmark = pytest.mark.ftb
+
 
 def make_q(mk: Path, target: Path) -> int:
     """0 = up to date, 1 = would rebuild, 2 = the makefile itself is broken."""

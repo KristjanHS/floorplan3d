@@ -12,6 +12,8 @@ import plans
 import preprocess
 import sandbox
 
+pytestmark = pytest.mark.ftb
+
 PROBE = plans.ROOT / "scripts" / "ftb_probe.py"
 T = 10  # wall thickness px
 
