@@ -73,6 +73,8 @@ Recommend: NEW `scripts/walls.py` (pure numpy/cv2 geometry: segments, pairing, m
   Tests: rooms 15 cm apart → one 15 cm wall; touching → none; room ↔ wall face 19.5 cm → wall snapped onto an anchor; narrow rooms' non-facing edges → none.
 - **R.2 `make walls-rooms NAME=`** dry run: room outlines (blue), generated (magenta), traced (green), holes = `walls.holes()` 40–`HOLE_CM` (100) cm strips (orange, counted) → `work/walls/<NAME>-L<i>-rooms.png`; Home.xml sha unchanged.
   [USER] eyeball → Stage 5 with source = rooms.
+- **R.3 `_claim` clips, never rejects.** A candidate overlapping a claimed stretch keeps its free sub-intervals (today the whole wall/hole drops).
+  Test: `rect(0,0,100,200)`, `rect(115,0,150,100)`, `rect(164,0,264,200)` → 15 cm wall y 0..100 + 64 cm hole y 100..200.
 
 ## Stage 5 — Write-in (`make walls NAME=`)
 - **5.1 Tag survival check.** Tag = `<property name="floorplan3d.auto" value="<geometry sig>"/>` + id prefix `auto-`. Test: tagged wall in toy Home.xml passes `validate_errors`.

@@ -287,4 +287,4 @@ def gap_walls(rooms: list[list[Point]], anchors: list[Wall], gap_cm: tuple[float
 
 def holes(rooms: list[list[Point]], anchors: list[Wall]) -> list[Wall]:
     """Strips too wide for a wall (ROOM_GAP_CM max .. HOLE_CM) a room edge faces with no nearer partner."""
-    return [w for w in gap_walls(rooms, anchors, (0.0, HOLE_CM)) if w.thickness > ROOM_GAP_CM[1]]
+    return gap_walls(rooms, anchors, (math.nextafter(ROOM_GAP_CM[1], math.inf), HOLE_CM))  # filter before merge

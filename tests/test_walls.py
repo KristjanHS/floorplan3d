@@ -201,10 +201,16 @@ def test_holes_flag_wide_strips_without_nearer_partner() -> None:
     assert walls.gap_walls(wide, []) == []
     (h,) = walls.holes(wide, [])
     assert h.thickness == pytest.approx(64)
-    assert walls.holes([rect(0, 0, 100, 200), rect(115, 0, 215, 200), rect(279, 0, 379, 200)], []) == [
-        walls.holes([rect(115, 0, 215, 200), rect(279, 0, 379, 200)], [])[0]
-    ]  # the 15 cm wall is no hole; the 64 cm strip beside it is
+    assert walls.holes([rect(0, 0, 100, 200), rect(115, 0, 150, 200), rect(164, 0, 264, 200)], []) == []  # shadowed
     assert walls.holes([rect(0, 0, 100, 200), rect(215, 0, 315, 200)], []) == []  # beyond HOLE_CM
+
+
+def test_holes_not_fused_with_collinear_walls() -> None:
+    # a 15 cm wall (y 0..50) and a 64 cm strip (y 50..200) share the centre line x=100
+    rooms = [rect(0, 0, 92.5, 50), rect(107.5, 0, 200, 50), rect(0, 50, 68, 200), rect(132, 50, 232, 200)]
+    (h,) = walls.holes(rooms, [])
+    assert h.thickness == pytest.approx(64)
+    assert sorted([h.p1[1], h.p2[1]]) == pytest.approx([50, 200])
 
 
 def test_gap_walls_touching_rooms_open() -> None:
