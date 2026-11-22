@@ -69,7 +69,7 @@ Recommend: NEW `scripts/walls.py` (pure numpy/cv2 geometry: segments, pairing, m
 - **4.3 [USER] gate again.** Record scores in a local results doc. Still below bar → STOP, record, ask (no write-in).
 
 ## Stage R — Walls from room gaps (replaces 3.2–4)
-- **R.1 `walls.gap_walls(edges, anchors)`** — `outward()` edges of room polygons + traced-wall long faces; facing parallel pairs with gap in `ROOM_GAP_CM` → centre wall; merge, snap onto traced walls.
+- **R.1 `walls.gap_walls(rooms, anchors)`** (room polygons + traced walls) — `outward()` edges of room polygons + traced-wall long faces; facing parallel pairs with gap in `ROOM_GAP_CM` → centre wall; merge, snap onto traced walls.
   Tests: rooms 15 cm apart → one 15 cm wall; touching → none; room ↔ wall face 19.5 cm → wall snapped onto an anchor; narrow rooms' non-facing edges → none.
 - **R.2 `make walls-rooms NAME=`** dry run: generated (magenta) + traced (green) on each level image → `work/walls/<NAME>-L<i>-rooms.png`; Home.xml sha unchanged. [USER] eyeball → Stage 5 with source = rooms.
 

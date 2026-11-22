@@ -159,6 +159,12 @@ def test_score_tolerance_edges() -> None:
         dy = 100 * math.tan(math.radians(tilt))
         g = Wall((0, off - dy), (200, off + dy), 15)
         assert (walls.score([g], traced).unmatched == []) is hit, (off, tilt)
+    long = Wall((0, 0), (2000, 2000 * math.tan(math.radians(2.9))), 15)  # 5 cm off at t's middle, 50 cm at its own
+    assert walls.score([long], traced).unmatched == []
+
+
+def test_score_skips_zero_length_traced() -> None:
+    assert walls.score([], {"dot": Wall((5, 5), (5, 5), 15)}).total == 0
 
 
 def test_score_unions_split_pieces() -> None:
@@ -192,6 +198,21 @@ def test_gap_walls_between_facing_rooms_only() -> None:
 
 def test_gap_walls_touching_rooms_open() -> None:
     assert walls.gap_walls([rect(0, 0, 100, 100), rect(100, 0, 200, 100)], []) == []
+    assert walls.gap_walls([rect(0, 0, 100, 100), rect(100.5, 0, 200, 100)], []) == []
+    assert len(walls.gap_walls([rect(0, 0, 100, 100), rect(101.5, 0, 200, 100)], [])) == 1
+
+
+def test_gap_walls_no_wall_across_narrow_open_room() -> None:
+    assert walls.gap_walls([rect(0, 0, 100, 200), rect(100, 0, 120, 200), rect(120, 0, 220, 200)], []) == []
+
+
+def test_gap_walls_same_direction_edges_claim_nothing() -> None:
+    # a duplicate trace shares the room's top edge; the 15 cm strip above still gets its wall
+    assert len(walls.gap_walls([rect(0, 0, 100, 100), rect(0, 0, 100, 50), rect(0, -115, 100, -15)], [])) == 1
+
+
+def test_gap_walls_min_overlap() -> None:
+    assert walls.gap_walls([rect(0, 0, 100, 100), rect(115, 97, 200, 200)], []) == []
 
 
 def test_gap_walls_room_to_wall_face_snaps_to_anchor() -> None:

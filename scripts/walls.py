@@ -16,6 +16,7 @@ MIN_OVERLAP = 0.6
 MERGE_OFFSET_CM, MERGE_GAP_CM, MERGE_DEG = 5.0, 100.0, 2.0
 SNAP_CM = 15.0
 ROOM_GAP_CM = (1.0, 40.0)  # an empty strip this wide between traced rooms is a wall; touching rooms are open
+ROOM_MIN_OVERLAP_CM = 10.0
 MATCH_DIST_CM, MATCH_DEG, MATCH_COVER = 10.0, 3.0, 0.5
 PASS_RATIO = 0.70
 
@@ -133,10 +134,10 @@ def pair(faces: list[Wall], px_per_cm: float) -> list[Wall]:
         if overlap < min(MIN_OVERLAP * min(a.length, b.length), MIN_SEG_CM * px_per_cm) or not lo <= gap <= hi:
             continue
         cands.append((gap, i, j, p, q))
-    return _claim(cands, faces)
+    return _claim(cands, faces, STROKE_PX)
 
 
-def _claim(cands: list[tuple[float, int, int, np.ndarray, np.ndarray]], faces: list[Wall]) -> list[Wall]:
+def _claim(cands: list[tuple[float, int, int, np.ndarray, np.ndarray]], faces: list[Wall], tol: float) -> list[Wall]:
     """Nearest gap first; a candidate survives only while both its face stretches are unclaimed."""
     used: dict[int, list[tuple[float, float]]] = {}
     out: list[Wall] = []
@@ -145,7 +146,7 @@ def _claim(cands: list[tuple[float, int, int, np.ndarray, np.ndarray]], faces: l
         for k in (i, j):
             t0, t1 = sorted(float(np.subtract(x, faces[k].p1) @ _axes(faces[k])[0]) for x in (p, q))
             stretch[k] = (t0, t1)
-        if not all(_free(used.get(k, []), *stretch[k], STROKE_PX) for k in (i, j)):
+        if not all(_free(used.get(k, []), *stretch[k], tol) for k in (i, j)):
             continue
         for k in (i, j):
             used.setdefault(k, []).append(stretch[k])
@@ -227,7 +228,7 @@ class Score:
 
 def score(generated: list[Wall], traced: dict[str, Wall]) -> Score:
     """Plan cm. A traced wall matches when the union of generated stretches near it covers MATCH_COVER of its length."""
-    truth = {k: t for k, t in traced.items() if GAP_CM[0] <= t.thickness <= GAP_CM[1]}
+    truth = {k: t for k, t in traced.items() if GAP_CM[0] <= t.thickness <= GAP_CM[1] and t.length > 0}
     out = Score(len(truth))
     for k, t in truth.items():
         covered, end = 0.0, 0.0
@@ -241,20 +242,23 @@ def score(generated: list[Wall], traced: dict[str, Wall]) -> Score:
 
 
 def outward(ring: list[Point]) -> list[Wall]:
-    """Polygon edges oriented so the outside is on each edge's right: (d[1], -d[0])."""
+    """Polygon edges oriented so each edge's normal (d[1], -d[0]) points away from the polygon."""
     area = sum(x1 * y2 - x2 * y1 for (x1, y1), (x2, y2) in zip(ring, ring[1:] + ring[:1]))
     ring = ring if area > 0 else ring[::-1]
     return [Wall(a, b) for a, b in zip(ring, ring[1:] + ring[:1]) if math.dist(a, b) > 0]
 
 
 def _facing(a: Wall, b: Wall) -> bool:
+    """Antiparallel normals, each midpoint on or in front of the other edge (touching counts)."""
     ma, mb = np.add(a.p1, a.p2) / 2, np.add(b.p1, b.p2) / 2
     (da, _), (db, _) = _axes(a), _axes(b)
-    return float((mb - ma) @ (da[1], -da[0])) > 0 and float((ma - mb) @ (db[1], -db[0])) > 0
+    if float(da @ db) >= 0:
+        return False
+    return float((mb - ma) @ (da[1], -da[0])) >= -1e-6 and float((ma - mb) @ (db[1], -db[0])) >= -1e-6
 
 
 def _faces(w: Wall) -> list[Wall]:
-    """A wall's two long faces, outward() oriented (body on the left)."""
+    """A wall's two long faces, each with normal (d[1], -d[0]) pointing away from the wall body."""
     n, h = _axes(w)[1], w.thickness / 2
     p1, p2 = np.asarray(w.p1, float), np.asarray(w.p2, float)
     ring = [(float(x), float(y)) for x, y in (p1 + n * h, p2 + n * h, p2 - n * h, p1 - n * h)]
@@ -265,14 +269,16 @@ def gap_walls(rooms: list[list[Point]], anchors: list[Wall]) -> list[Wall]:
     """Plan cm. A wall centred in each ROOM_GAP_CM strip a room edge faces (another room, or a traced anchor's face);
     merged, then snapped onto each other and the anchors (not returned). Anchor-to-anchor gaps are not rooms' business."""
     lo, hi = ROOM_GAP_CM
-    edges = [(True, e) for r in rooms for e in outward(r)] + [(False, f) for a in anchors for f in _faces(a)]
+    edges = [(True, e) for r in rooms for e in outward(r)]
+    edges += [(False, f) for a in anchors if a.thickness > 0 for f in _faces(a)]
     cands: list[tuple[float, int, int, np.ndarray, np.ndarray]] = []
     for i, j in combinations(range(len(edges)), 2):
         (ra, a), (rb, b) = edges[i], edges[j]
         if not (ra or rb) or _angle(a, b) > PARALLEL_DEG or not _facing(a, b):
             continue
         overlap, gap, p, q = _between(a, b)
-        if overlap > 0 and lo <= gap <= hi:
+        if overlap >= ROOM_MIN_OVERLAP_CM and gap <= hi:  # touching pairs (gap < lo) claim their stretch, then drop
             cands.append((gap, i, j, p, q))
-    merged = merge(_claim(cands, [e for _, e in edges]), 1.0)
+    claimed = [w for w in _claim(cands, [e for _, e in edges], 5.0) if w.thickness >= lo]
+    merged = merge(claimed, 1.0)
     return snap(merged + anchors, 1.0)[: len(merged)]
