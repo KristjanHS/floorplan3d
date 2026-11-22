@@ -1,6 +1,6 @@
 # SH3D auto walls — generate internal walls into Home.xml, user fixes in the GUI
 
-Status: in progress — Stages 1–2.3 committed 2026-11-21; next Stage 2.4. Goal: `make walls NAME=<name>` writes detected walls into `sh3d_src/<NAME>/Home.xml`, tagged as generated;
+Status: in progress — Stages 1–3.1 committed; image stages 3.2–4 parked (rooms ruling); next Stage R.1. Goal: `make walls NAME=<name>` writes detected walls into `sh3d_src/<NAME>/Home.xml`, tagged as generated;
 the user then edits (not traces) them in SweetHome3D. Measured results (scores, overlay verdicts) → a local results doc, never here.
 
 ## Rulings (user, 2026-11-21)
@@ -12,6 +12,7 @@ the user then edits (not traces) them in SweetHome3D. Measured results (scores, 
 - Re-run replaces ONLY tagged walls; hand-traced walls never touched. `make push NAME=` repacks unchanged.
 - `scripts/preprocess.py` `wall_mask` is NOT reused (fails on double-line + hatching walls).
 - (2026-11-22) Hatch: axis-only faces (0°/90° ± `PARALLEL_DEG`); diagonal walls are hand-traced. Score: coverage = union of matching pieces; zero-traced level → n/a, overall FAIL.
+- (2026-11-22) Wall source = gaps between traced rooms, and room ↔ traced-wall face: gap in `ROOM_GAP_CM` (1–40) → wall centred in it, thickness = gap; 0 = open. Image stages 3.2–4 parked.
 
 ## Known facts (SH3D 7.6.1 source, `work/sh3d-src/`)
 - Background px → plan cm: `x = u·s − xOrigin`, `y = v·s − yOrigin`, `s = scaleDistance / |start−end|`; scale points in image px, origins in cm
@@ -66,6 +67,11 @@ Recommend: NEW `scripts/walls.py` (pure numpy/cv2 geometry: segments, pairing, m
   FTB px → background px via `plans.at_downscale`/work meta. Test: synthetic boxes → expected walls; falsifier: wrong downscale fails the position assert.
 - **4.2 Merge + rescore.** `walls.union(pairs, ftb)` dedupes with the match tolerances; `walls-score SOURCE=pairs|ftb|both`. Test: duplicate wall from both sources counted once.
 - **4.3 [USER] gate again.** Record scores in a local results doc. Still below bar → STOP, record, ask (no write-in).
+
+## Stage R — Walls from room gaps (replaces 3.2–4)
+- **R.1 `walls.gap_walls(edges)`** — edges = (owner, Wall) from room polygons + traced-wall faces; facing, different-owner, parallel pairs with gap in `ROOM_GAP_CM` → centre wall; merge, snap onto traced walls.
+  Tests: rooms 15 cm apart → one 15 cm wall; touching → none; room ↔ wall face 19.5 cm → wall; a narrow room's own opposite edges → none.
+- **R.2 `make walls-rooms NAME=`** dry run: generated (magenta) + traced (green) on each level image → `work/walls/<NAME>-L<i>-rooms.png`; Home.xml sha unchanged. [USER] eyeball → Stage 5 with source = rooms.
 
 ## Stage 5 — Write-in (`make walls NAME=`)
 - **5.1 Tag survival check.** Tag = `<property name="floorplan3d.auto" value="<geometry sig>"/>` + id prefix `auto-`. Test: tagged wall in toy Home.xml passes `validate_errors`.
