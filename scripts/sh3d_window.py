@@ -43,6 +43,7 @@ HINGE_LEN = 8.0
 HINGE_INSET = 15.0  # hinge distance from the sash top/bottom
 HANDLE_PROJ = 4.5  # handle reach past the room face; part of the model's bbox depth
 MODEL_DEPTH = DEPTH + HANDLE_PROJ
+BAR_W, BAR_INSET = 2.5, 8.0  # coupling bar width, distance from the sash side
 ELEVATION = 90.0  # default sill height
 
 MATERIALS = {
@@ -71,9 +72,14 @@ def ring(x0: float, x1: float, y0: float, y1: float, z0: float, z1: float, w: fl
     ]
 
 
-def window_groups(width: float, height: float) -> list[Group]:
-    if width < 2 * (FRAME + INNER_FACE) + 10 or height < 2 * (FRAME + INNER_FACE) + 10:
+def check_size(width: float, height: float) -> None:
+    """Smallest size whose coupling bars and hinge knuckles don't run into each other."""
+    if width < 2 * (FRAME + CLEAR + BAR_INSET + BAR_W) + 5 or height < 2 * (FRAME + CLEAR + HINGE_INSET) + HINGE_LEN:
         raise ValueError(f"window {width:g}x{height:g} cm is too small for its profiles")
+
+
+def window_groups(width: float, height: float) -> list[Group]:
+    check_size(width, height)
     sx0, sx1 = FRAME + CLEAR, width - FRAME - CLEAR  # sash outer bounds
     sy0, sy1 = FRAME + CLEAR, height - FRAME - CLEAR
     inner_z1 = INNER_Z0 + INNER_T
@@ -94,10 +100,10 @@ def window_groups(width: float, height: float) -> list[Group]:
 
     # Coupling bars: flat straps on the top and bottom sash edges bridging the gap between layers,
     # one near each side.
-    bar_w, bar_t = 2.5, 0.3
+    bar_t = 0.3
     bars = [
-        (x, x + bar_w, y0, y1, OUTER_Z0 + 1.0, inner_z1 - 1.0)
-        for x in (sx0 + 8.0, sx1 - 8.0 - bar_w)
+        (x, x + BAR_W, y0, y1, OUTER_Z0 + 1.0, inner_z1 - 1.0)
+        for x in (sx0 + BAR_INSET, sx1 - BAR_INSET - BAR_W)
         for y0, y1 in ((sy0 - bar_t, sy0), (sy1, sy1 + bar_t))
     ]
 
@@ -181,9 +187,7 @@ def rotate_y(p: Vec, axis_x: float, axis_z: float, deg: float) -> Vec:
 
 def render_png(groups: list[Group], width: float, height: float, size_px: int, open_deg: float = 0.0) -> bytes:
     """Shaded view from the room side; open_deg swings the sash for a preview."""
-    hinge = next(g for g in groups if g.name == "sweethome3d_hinge_1").boxes
-    ax_x = (min(b[0] for b in hinge) + max(b[1] for b in hinge)) / 2
-    ax_z = (min(b[4] for b in hinge) + max(b[5] for b in hinge)) / 2
+    ax_x, ax_z = hinge_axis(groups)
     light = (0.35, 0.5, 0.8)
     polys, colours = [], []
     for g in groups:
@@ -233,9 +237,20 @@ def size_tag(width: float, height: float) -> str:
     return f"{width:g}x{height:g}".replace(".", "_")
 
 
+def hinge_axis(groups: list[Group]) -> tuple[float, float]:
+    """(x, z) of the swing axis: SH3D's pivot is the centre of all hinge parts' combined bbox."""
+    hinge = next(g for g in groups if g.name == "sweethome3d_hinge_1").boxes
+    return (
+        (min(b[0] for b in hinge) + max(b[1] for b in hinge)) / 2,
+        (min(b[4] for b in hinge) + max(b[5] for b in hinge)) / 2,
+    )
+
+
 def catalog_entry(i: int, width: float, height: float) -> list[str]:
     tag = size_tag(width, height)
-    opening = width - 2 * FRAME
+    # Plan sash arc from the 3D hinge: x and y in cm from the model's back-left, radius to the free edge.
+    ax_x, ax_z = hinge_axis(window_groups(width, height))
+    radius = width - FRAME - CLEAR - ax_x
     keys = {
         "id": f"floorplan3d#coupledWindow{tag}",
         "name": f"Coupled wooden window {width:g}x{height:g}",
@@ -250,14 +265,18 @@ def catalog_entry(i: int, width: float, height: float) -> list[str]:
         "elevation": f"{ELEVATION:g}",
         "movable": "false",
         "doorOrWindow": "true",
-        # The frame keeps its own depth inside any wall; the cut-out still runs through the wall.
+        # Not width/depth deformable, so the frame keeps its own depth in any wall and the cut-out
+        # still runs through the whole wall. SH3D then drops the frame flush with the wall face the
+        # window was dropped on (PlanController); move it in plan for a mid-wall or exterior seat.
+        # A width or height resize still scales depth and profiles proportionally: add a --size instead.
+        "doorOrWindowCutOutShape": "M0,0 v1 h1 v-1 z",
         "doorOrWindowWallThickness": f"{DEPTH:g}",
         "doorOrWindowWallDistance": "0",
         "doorOrWindowWidthDepthDeformable": "false",
         "doorOrWindowWallCutOutOnBothSides": "true",
-        "doorOrWindowSashXAxis": f"{FRAME:g}",
-        "doorOrWindowSashYAxis": f"{DEPTH:g}",
-        "doorOrWindowSashWidth": f"{opening:g}",
+        "doorOrWindowSashXAxis": f"{ax_x:g}",
+        "doorOrWindowSashYAxis": f"{ax_z:g}",
+        "doorOrWindowSashWidth": f"{radius:g}",
         "doorOrWindowSashStartAngle": "0",
         "doorOrWindowSashEndAngle": "-90",
         "creator": "floorplan3d",
@@ -274,6 +293,8 @@ def build_library(sizes: list[tuple[float, float]], out: Path) -> None:
         "provider=floorplan3d",
         "",
     ]
+    for w, h in sizes:
+        check_size(w, h)  # before the zip exists, so a bad size leaves no partial file
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp = out.with_suffix(".tmp")
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
