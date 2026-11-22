@@ -6,6 +6,7 @@ import hashlib
 import math
 import re
 import sys
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,6 +19,8 @@ import walls as wl
 
 AUTO_PROP = "floorplan3d.auto"  # Stage 5 tag, value = geometry sig; tagged walls are never ground truth
 AUTO_ID = "auto-"
+# home-level properties: ids the last write emitted / GUI-deleted auto ids it never re-emits (Stage 5 tombstone)
+WRITTEN_PROP, DELETED_PROP = f"{AUTO_PROP}.written", f"{AUTO_PROP}.deleted"
 SIG_TOL_CM = 0.01  # SH3D stores floats: a resave may reprint a coordinate, an edit moves it further
 WALL_RE = re.compile(r"[ \t]*<wall\b[^>]*?(?:/>|(?<!/)>.*?</wall>)[ \t]*\n?", re.DOTALL)
 AUTO_PROP_RE = re.compile(rf"""\s*<property name=(['"]){re.escape(AUTO_PROP)}\1 value=(['"])([^'"]*)\2\s*/>""")
@@ -235,9 +238,37 @@ def _wall_xml(level: str | None, w: wl.Wall, height: str) -> tuple[str, str]:
     )
 
 
-def write_walls(text: str, generated: list[tuple[str | None, wl.Wall, str]]) -> str:
+def _home_prop_re(name: str) -> re.Pattern[str]:
+    return re.compile(rf"""\n?[ \t]*<property name=(['"]){re.escape(name)}\1 value=(['"])([^'"]*)\2\s*/>""")
+
+
+def _home_ids(text: str, name: str) -> set[str]:
+    m = _home_prop_re(name).search(text)
+    return set(m.group(3).split()) if m else set()
+
+
+def _set_home_ids(text: str, name: str, ids: set[str]) -> str:
+    """Replace (or drop, when empty) home-level property `name`; a new one goes first in <home> (DTD: property*)."""
+    prop = f"\n  <property name='{name}' value='{' '.join(sorted(ids))}'/>" if ids else ""
+    rx = _home_prop_re(name)
+    if rx.search(text):
+        return rx.sub(lambda _: prop, text, count=1)
+    home = re.search(r"<home\b[^>]*>", text)
+    if home is None:
+        raise sh3d.Sh3dError("Home.xml: no <home>")
+    return text[: home.end()] + prop + text[home.end() :]
+
+
+Generated = list[tuple[str | None, wl.Wall, str]]
+
+
+def write_walls(text: str, generated: Generated) -> tuple[str, Generated, int]:
     """Home.xml text in, text out: drop tagged walls, insert (level, wall, height) after the last remaining wall (DTD
-    order: walls precede rooms), clear refs to dropped ids not re-inserted. Every other byte is kept."""
+    order: walls precede rooms), clear refs to dropped ids not re-inserted. Every other byte is kept.
+    Tombstone: an auto id in WRITTEN_PROP now absent from the file was deleted in the GUI; it joins DELETED_PROP and is
+    never emitted again. Returns the text, the walls actually inserted and the number of tombstoned walls withheld."""
+    present = {_open_attrs(m.group(0)).get("id") for m in WALL_RE.finditer(text)}
+    deleted = (_home_ids(text, DELETED_PROP) | _home_ids(text, WRITTEN_PROP)) - present
     removed: set[str] = set()
 
     def drop(m: re.Match[str]) -> str:
@@ -248,11 +279,14 @@ def write_walls(text: str, generated: list[tuple[str | None, wl.Wall, str]]) -> 
 
     text = WALL_RE.sub(drop, text)
     ids = {_open_attrs(m.group(0)).get("id") for m in WALL_RE.finditer(text)}  # an edited wall keeps its auto- id
-    block, new_ids = "", set()
+    block, new_ids, inserted, withheld = "", set(), [], set()
     for level, w, height in generated:
         wid, xml = _wall_xml(level, w, height)
-        if wid not in ids and wid not in new_ids:
+        if wid in deleted:
+            withheld.add(wid)
+        elif wid not in ids and wid not in new_ids:
             new_ids.add(wid)
+            inserted.append((level, w, height))
             block += xml
     gone = removed - new_ids
     text = re.sub(
@@ -268,23 +302,25 @@ def write_walls(text: str, generated: list[tuple[str | None, wl.Wall, str]]) -> 
         if nxt is None:
             raise sh3d.Sh3dError("Home.xml: no </home>")
         at = nxt.start()
-    return text[:at] + block + text[at:]
+    text = text[:at] + block + text[at:]
+    written = new_ids | {i for i in ids if i and i.startswith(AUTO_ID)}  # kept edited auto walls: a delete sticks too
+    return _set_home_ids(_set_home_ids(text, WRITTEN_PROP, written), DELETED_PROP, deleted), inserted, len(withheld)
 
 
-def generate(root: etree._Element) -> tuple[list[tuple[str | None, wl.Wall, str]], dict[str | None, tuple[int, int]]]:
-    """Room-gap walls per level, minus those duplicating a hand-traced wall; (level, wall, height) + per-level counts."""
+def generate(root: etree._Element) -> tuple[Generated, dict[str | None, int]]:
+    """Room-gap walls per level, minus those duplicating a hand-traced wall; (level, wall, height) + per-level skips."""
     traced, rings = traced_walls(root), room_rings(root)
     levels = [(lv.get("id"), lv.get("height", "")) for lv in root.findall("level")]
-    out: list[tuple[str | None, wl.Wall, str]] = []
-    counts: dict[str | None, tuple[int, int]] = {}
+    out: Generated = []
+    skipped: dict[str | None, int] = {}
     for level_id, height in levels or [(None, root.get("wallHeight", ""))]:
         level_rooms = [r for lv, r in rings if lv == level_id and len(r) >= 3]
         anchors = [wl.Wall(w.p1, w.p2, w.thickness) for w in traced if w.level_id == level_id]
         gen = wl.gap_walls(level_rooms, anchors)
         keep = [w for w in gen if not wl.matches(w, anchors)]
         out += [(level_id, w, height) for w in keep]
-        counts[level_id] = (len(keep), len(gen) - len(keep))
-    return out, counts
+        skipped[level_id] = len(gen) - len(keep)
+    return out, skipped
 
 
 def write(src: Path, work: Path, name: str) -> None:
@@ -297,14 +333,17 @@ def write(src: Path, work: Path, name: str) -> None:
     bom = codecs.BOM_UTF8 if before.startswith(codecs.BOM_UTF8) else b""
     text, untagged = untag_edited(sh3d.home_xml_bytes(xml).decode())
     root = etree.fromstring(text.encode(), etree.XMLParser(resolve_entities=False, no_network=True))
-    generated, counts = generate(root)
-    xml.write_bytes(bom + write_walls(text, generated).encode())
+    generated, skipped = generate(root)
+    text, inserted, withheld = write_walls(text, generated)
+    xml.write_bytes(bom + text.encode())
     errors = sh3d.validate_errors(tree, dtd)
     if errors:
         xml.write_bytes(before)
         raise sh3d.Sh3dError(f"write: {len(errors)} error(s), Home.xml restored\n" + "\n".join(errors))
-    for i, (n, skipped) in enumerate(counts.values()):
-        print(f"L{i}: {n} walls written, {skipped} skipped (match a traced wall)")
+    written = Counter(level for level, _, _ in inserted)
+    for i, (level, n) in enumerate(skipped.items()):
+        print(f"L{i}: {written[level]} walls written, {n} skipped (match a traced wall)")
+    print(f"{withheld} deleted auto walls stay deleted")
     print(f"{untagged} edited auto walls kept as hand-traced")
 
 

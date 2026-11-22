@@ -11,8 +11,10 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import zipfile
+import zlib
 from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -242,26 +244,33 @@ def pull(roots: Roots, name: str, force: bool = False) -> None:
         if recorded is not None and recorded != tree_shas(tree):
             raise Sh3dError(f"{name} has edits not yet pushed — push first, or pull --force to discard them")
     source_sha = sha256_file(sh3d)
-    with zipfile.ZipFile(sh3d) as zf:
-        infos = zf.infolist()
-        for info in infos:
-            check_entry_name(info.filename)
+    tree.parent.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix=f".{name}.pull-", dir=tree.parent))  # same fs: the swap is two renames
+    new = stage / "new"
+    try:
+        with zipfile.ZipFile(sh3d) as zf:
+            infos = zf.infolist()
+            for info in infos:
+                check_entry_name(info.filename)
+            new.mkdir()
+            for info in infos:
+                if info.is_dir() or info.filename in DROPPED:
+                    continue
+                out = new / info.filename
+                out.parent.mkdir(parents=True, exist_ok=True)
+                out.write_bytes(zf.read(info))
+        meta = {
+            "source_sha256": source_sha,
+            "sh3d_version_pinned": SH3D_VERSION_PINNED,
+            "entries": [{"name": i.filename, "compress_type": i.compress_type} for i in infos],
+            "files": tree_shas(new),
+        }
+        (new / META).write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
         if tree.exists():
-            shutil.rmtree(tree)
-        tree.mkdir(parents=True)
-        for info in infos:
-            if info.is_dir() or info.filename in DROPPED:
-                continue
-            out = tree / info.filename
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_bytes(zf.read(info))
-    meta = {
-        "source_sha256": source_sha,
-        "sh3d_version_pinned": SH3D_VERSION_PINNED,
-        "entries": [{"name": i.filename, "compress_type": i.compress_type} for i in infos],
-        "files": tree_shas(tree),
-    }
-    (tree / META).write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+            tree.rename(stage / "old")  # a failed extraction never got here: the old tree is untouched
+        new.rename(tree)
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
     print(f"pull: ok {name} — {len(infos)} entries → {tree}")
 
 
@@ -283,7 +292,7 @@ def sync(roots: Roots, name: str) -> None:
         raise Sh3dError(f"{name} saved in SH3D but {meta_path} is older meta — run make pull NAME={name} explicitly")
     try:
         pull(roots, name)
-    except zipfile.BadZipFile as e:
+    except (zipfile.BadZipFile, zlib.error, EOFError, OSError) as e:
         raise Sh3dError(f"{sh3d} is not a readable zip ({e}) — still being saved? retry when SH3D is done") from e
     src = str(roots.src.resolve())
     msg = f"sh3d_src({name}): auto-pull GUI save"

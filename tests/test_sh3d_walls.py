@@ -127,7 +127,7 @@ def test_rooms_dry_run_draws_walls_and_holes_without_writing(
     assert out is not None and (out == sh3d_walls.ORANGE).all(axis=2).any()
 
 
-WRITE_DTD = """<!ELEMENT home (level*, wall*, room*)>
+WRITE_DTD = """<!ELEMENT home (property*, level*, wall*, room*)>
 <!ATTLIST home version CDATA #IMPLIED name CDATA #IMPLIED wallHeight CDATA #IMPLIED>
 <!ELEMENT level EMPTY>
 <!ATTLIST level id ID #REQUIRED height CDATA #IMPLIED>
@@ -221,19 +221,60 @@ def test_write_replaces_tagged_keeps_edited_and_hand_walls(home_src: Path, tmp_p
     assert home_src.read_text() == joined  # idempotent; the hand wall's join to a re-inserted id survives
 
 
-def test_write_edited_wall_keeps_its_id_no_duplicate(home_src: Path, tmp_path: Path) -> None:
+def wall_by_id(text: str, wid: str) -> list[str]:
+    return [w for w in sh3d_walls.WALL_RE.findall(text) if sh3d_walls._open_attrs(w)["id"] == wid]
+
+
+def test_write_edited_wall_keeps_its_id_no_duplicate(
+    home_src: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     assert sh3d_walls.main(write_cli(tmp_path)) == 0
     out = home_src.read_text()
     (new,) = [w for w in auto_walls(out) if sh3d_walls.AUTO_PROP in w]
-    x = sh3d_walls._open_attrs(new)["xStart"]
-    moved = new.replace(f"xStart='{x}' ", f"xStart='{float(x) + 20}' ").replace(
-        f"xEnd='{x}' ", f"xEnd='{float(x) + 20}' "
-    )
+    wid, x1, x2 = (sh3d_walls._open_attrs(new)[k] for k in ("id", "xStart", "xEnd"))
+    moved_x = (str(float(x1) + 20), str(float(x2) + 20))
+    moved = new.replace(f"xStart='{x1}' ", f"xStart='{moved_x[0]}' ").replace(f"xEnd='{x2}' ", f"xEnd='{moved_x[1]}' ")
     home_src.write_text(out.replace(new, moved))
     git(tmp_path / "src", "commit", "-q", "-am", "moved")
+    capsys.readouterr()
     assert sh3d_walls.main(write_cli(tmp_path)) == 0  # was: DTD duplicate ID, Home.xml restored
+    (kept,) = wall_by_id(home_src.read_text(), wid)
+    attrs = sh3d_walls._open_attrs(kept)
+    assert (attrs["xStart"], attrs["xEnd"]) == moved_x and sh3d_walls.AUTO_PROP not in kept  # adopted, untagged
+    assert "L0: 0 walls written" in capsys.readouterr().out  # its id is taken: nothing was inserted
+
+
+def test_write_gui_deleted_auto_wall_stays_deleted(
+    home_src: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert sh3d_walls.main(write_cli(tmp_path)) == 0
+    out = home_src.read_text()
+    (new,) = [w for w in auto_walls(out) if sh3d_walls.AUTO_PROP in w]
+    wid = sh3d_walls._open_attrs(new)["id"]
+    assert wid in sh3d_walls._home_ids(out, sh3d_walls.WRITTEN_PROP)
+    home_src.write_text(out.replace(new, ""))  # deleted in the GUI
+    git(tmp_path / "src", "commit", "-q", "-am", "deleted")
+    capsys.readouterr()
+    assert sh3d_walls.main(write_cli(tmp_path)) == 0
     again = home_src.read_text()
-    assert again.count(sh3d_walls._open_attrs(new)["id"]) == 1 and sh3d_walls.AUTO_PROP not in moved.split(">")[0]
+    assert wall_by_id(again, wid) == []
+    assert sh3d_walls._home_ids(again, sh3d_walls.DELETED_PROP) == {wid}
+    assert wid not in sh3d_walls._home_ids(again, sh3d_walls.WRITTEN_PROP)
+
+    def walls_and_rest(text: str) -> str:  # everything but the two home-level tombstone properties
+        for name in (sh3d_walls.WRITTEN_PROP, sh3d_walls.DELETED_PROP):
+            text = sh3d_walls._home_prop_re(name).sub("", text)
+        return text
+
+    assert walls_and_rest(again) == walls_and_rest(out.replace(new, ""))  # every other wall untouched
+    assert capsys.readouterr().out.splitlines() == [
+        "L0: 0 walls written, 0 skipped (match a traced wall)",  # was: 1 written, counted before the tombstone
+        "1 deleted auto walls stay deleted",
+        "0 edited auto walls kept as hand-traced",
+    ]
+    git(tmp_path / "src", "commit", "-q", "-am", "w")
+    assert sh3d_walls.main(write_cli(tmp_path)) == 0
+    assert home_src.read_text() == again  # idempotent: the tombstone holds on every later run
 
 
 def test_write_refuses_dirty_tree(home_src: Path, tmp_path: Path) -> None:

@@ -497,3 +497,30 @@ def test_auto_pull_refuses_older_meta(roots: sh3d.Roots, pulled: Path, capsys: p
     assert run(roots, "validate", "x") == 1
     assert "older meta — run make pull NAME=x explicitly" in capsys.readouterr().err
     assert b"x='101'" in (pulled / "Home.xml").read_bytes()
+
+
+def corrupt_member(path: Path, member: str) -> None:
+    """Garble a deflated member's data, central directory intact: ZipFile opens, the read fails mid-extraction."""
+    with zipfile.ZipFile(path) as zf:
+        info = zf.getinfo(member)
+    data = bytearray(path.read_bytes())
+    start = info.header_offset + 30 + len(info.filename) + len(info.extra)  # local header: 30 fixed bytes
+    data[start + 2 : start + 12] = b"\xff" * 10
+    path.write_bytes(bytes(data))
+
+
+@pytest.mark.parametrize("damage", ["truncated", "garbled member"])
+def test_auto_pull_unreadable_save_is_sh3d_error_tree_intact(
+    roots: sh3d.Roots, pulled: Path, capsys: pytest.CaptureFixture[str], damage: str
+) -> None:
+    commit(roots.src)
+    before = {p.relative_to(pulled): p.read_bytes() for p in sorted(pulled.rglob("*")) if p.is_file()}
+    path = roots.sh3d("x")
+    if damage == "truncated":  # SH3D still writing: no central directory yet
+        path.write_bytes(path.read_bytes()[: path.stat().st_size // 2])
+    else:  # fails after other entries are written: an in-place extraction has wiped the old tree by then
+        corrupt_member(path, "Home.xml")
+    assert run(roots, "validate", "x") == 1
+    assert "is not a readable zip" in capsys.readouterr().err
+    assert {p.relative_to(pulled): p.read_bytes() for p in sorted(pulled.rglob("*")) if p.is_file()} == before
+    assert sorted(p.name for p in roots.src.iterdir()) == [".git", "x"]  # no staging dir left behind
