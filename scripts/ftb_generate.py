@@ -6,9 +6,13 @@
 import sys
 from pathlib import Path
 
-UPSTREAM = Path(__file__).resolve().parent.parent / "vendor" / "FloorplanToBlender3d"
-sys.path.insert(0, str(UPSTREAM))
+HERE = Path(__file__).resolve().parent
+# -I drops the script dir from sys.path; the guard and upstream are imported by path.
+sys.path[:0] = [str(HERE), str(HERE.parent / "vendor" / "FloorplanToBlender3d")]
 
+import upstream_guard  # noqa: F401 — exits outside scripts/sandbox.py; keep it before every upstream import
+
+# isort: split
 import cv2
 import numpy as np
 from FloorplanToBlenderLib import execution, floorplan

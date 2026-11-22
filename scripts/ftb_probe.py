@@ -17,6 +17,9 @@ HERE = Path(__file__).resolve().parent
 # -I drops the script dir from sys.path; ftb_generate (shims) and upstream are imported by path.
 sys.path[:0] = [str(HERE), str(HERE.parent / "vendor" / "FloorplanToBlender3d")]
 
+import upstream_guard  # noqa: F401 — exits outside scripts/sandbox.py; keep it before every upstream import
+
+# isort: split
 import cv2
 import numpy as np
 from FloorplanToBlenderLib import IO, calculate, const, detect, floorplan

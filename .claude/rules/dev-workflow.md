@@ -17,6 +17,7 @@ last_verified: 2026-11-21
 - Point upstream's generated config/output (`system.ini`, `Configs/`, `target/`) outside `vendor/` where it allows; else set `ignore = untracked` for the submodule in `.gitmodules`.
 - Version bump: `git -C vendor/FloorplanToBlender3d fetch && git -C … checkout <sha>`, then `git add vendor/FloorplanToBlender3d` + a `NOTES.md` entry. Fresh clone: `git submodule update --init`.
 - Call upstream as a subprocess, never import it into our scripts — keeps the MIT/GPL-3.0 split clean.
+- Run upstream, and any probe importing it, only under `scripts/sandbox.py` (`--rw <scratch>`), never bare `.venv/bin/python`.
 
 ## Blender scripts
 - Run headless: `$(BLENDER) --background [in.blend] --python-exit-code 1 --python scripts/x.py -- <args>` — the `.blend` goes before `--python`, or the script silently runs on the default scene.

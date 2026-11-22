@@ -5,7 +5,7 @@ terminal, pytest-style: each file's name as it starts, then pytest's own letters
 finishes. A test still running after SLOW_S gets its own line with a live elapsed counter and,
 once done, pytest's verbose words. pytest's summary stats line feeds the gate's ok line.
 
-Also the shared Blender-backed `converted` fixture (upstream's example plan, converted once per session).
+Also a session-end tripwire (any .pyc under vendor/ fails the run) and the shared Blender-backed `converted` fixture (upstream's example plan, converted once per session).
 """
 
 import os
@@ -13,6 +13,7 @@ import shutil
 import threading
 import time
 from collections.abc import Iterator
+from pathlib import Path
 from typing import IO
 
 import cv2
@@ -23,7 +24,8 @@ import convert
 import plans
 import preprocess
 
-EXAMPLE = plans.ROOT / "vendor" / "FloorplanToBlender3d" / "Images" / "Examples" / "example.png"
+VENDOR = plans.ROOT / "vendor"
+EXAMPLE = VENDOR / "FloorplanToBlender3d" / "Images" / "Examples" / "example.png"
 WALL_H = 2.6
 
 SLOW_S = 2.0
@@ -129,6 +131,23 @@ def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
         parts, _color = terminalreporter.build_summary_stats_line()
         with open(state, "w") as f:
             f.write(", ".join(text for text, _markup in parts))
+
+
+def stray_vendor_pyc() -> list[Path]:
+    """sandbox.py ro-binds the repo, so a .pyc under vendor/ means upstream code ran on the host."""
+    return sorted(p.relative_to(plans.ROOT) for p in VENDOR.rglob("*.pyc"))
+
+
+def pytest_sessionfinish(session: pytest.Session) -> None:
+    if hasattr(session.config, "workerinput"):
+        return  # xdist: the controller checks once
+    stray = stray_vendor_pyc()
+    if stray:
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED
+        tr = session.config.pluginmanager.get_plugin("terminalreporter")
+        msg = f"upstream code ran outside scripts/sandbox.py: {len(stray)} .pyc under vendor/, e.g. {stray[0]}"
+        if tr is not None:
+            tr.write_line(msg, red=True)
 
 
 def pytest_unconfigure(config: pytest.Config) -> None:
