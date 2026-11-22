@@ -143,7 +143,8 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
         return  # xdist: the controller checks once
     stray = stray_vendor_pyc()
     if stray:
-        session.exitstatus = pytest.ExitCode.TESTS_FAILED
+        if session.exitstatus in (pytest.ExitCode.OK, pytest.ExitCode.NO_TESTS_COLLECTED):
+            session.exitstatus = pytest.ExitCode.TESTS_FAILED
         tr = session.config.pluginmanager.get_plugin("terminalreporter")
         msg = f"upstream code ran outside scripts/sandbox.py: {len(stray)} .pyc under vendor/, e.g. {stray[0]}"
         if tr is not None:
