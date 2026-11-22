@@ -88,7 +88,13 @@ def segments(img: np.ndarray, px_per_cm: float) -> list[Wall]:
         return []
     faces = [Wall((x1, y1), (x2, y2)) for x1, y1, x2, y2 in lines.reshape(-1, 4).tolist()]
     faces = _join(faces, STROKE_PX, STROKE_PX, PARALLEL_DEG)
-    return [f for f in faces if f.length >= MIN_SEG_CM * px_per_cm]
+    return [f for f in faces if f.length >= MIN_SEG_CM * px_per_cm and _axial(f)]
+
+
+def _axial(w: Wall) -> bool:
+    """Within PARALLEL_DEG of 0°/90°: 45° hatch in thick walls outlives MIN_SEG_CM; diagonal walls are hand-traced."""
+    d = _axes(w)[0]
+    return math.degrees(math.asin(min(1.0, min(abs(float(d[0])), abs(float(d[1])))))) <= PARALLEL_DEG
 
 
 def _free(used: list[tuple[float, float]], t0: float, t1: float, tol: float) -> bool:

@@ -131,6 +131,21 @@ def test_detect_end_to_end() -> None:
         ), (p1, p2, t, found)
 
 
+def test_detect_thick_hatched_walls() -> None:
+    ppc, t = 1.1, 44  # 40 cm: 45° hatch strokes inside are 56 cm, past MIN_SEG_CM
+    drawn = [((100, 100), (700, 100), t), ((100, 100), (100, 600), t), ((400, 100), (400, 500), t)]
+    found = walls.detect(plan_image(drawn, None, (800, 800)), ppc)
+    expected = [((100, 100), (722, 100)), ((100, 100), (100, 622)), ((400, 100), (400, 522))]
+    assert len(found) == len(expected), found
+    for p1, p2 in expected:
+        assert any(
+            min(math.dist(p1, w.p1), math.dist(p1, w.p2)) <= 3
+            and min(math.dist(p2, w.p1), math.dist(p2, w.p2)) <= 3
+            and abs(w.thickness - t) <= 2
+            for w in found
+        ), (p1, p2, found)
+
+
 def test_detect_staggered_t_junctions() -> None:
     drawn = [((100, 400), (1000, 400), 16), ((300, 100), (300, 400), 10), ((600, 400), (600, 800), 10)]
     found = walls.detect(plan_image(drawn, None, (900, 1100)), PPC)
