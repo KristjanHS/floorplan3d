@@ -23,6 +23,7 @@ WALL_RE = re.compile(r"[ \t]*<wall\b[^>]*?(?:/>|(?<!/)>.*?</wall>)[ \t]*\n?", re
 AUTO_PROP_RE = re.compile(rf"""\s*<property name=(['"]){re.escape(AUTO_PROP)}\1 value=(['"])([^'"]*)\2\s*/>""")
 ATTR_RE = re.compile(r"""(\w+)=(['"])(.*?)\2""")
 GEOMETRY = ("xStart", "yStart", "xEnd", "yEnd", "thickness")
+WRITTEN_ATTRS = {"id", "level", *GEOMETRY, "height"}
 DARK = 128  # grey level below which a px counts as ink
 INK_RADIUS_PX = 1  # a face sample hits if any px within this radius is ink
 
@@ -180,27 +181,40 @@ def _num(v: float) -> str:
     return "0" if out == "-0" else out
 
 
-def _sig(w: wl.Wall) -> str:
-    return ",".join(_num(v) for v in (*w.p1, *w.p2, w.thickness))
+def _sig(w: wl.Wall, height: str) -> str:
+    return ",".join(_num(v) for v in (*w.p1, *w.p2, w.thickness)) + (f",{_num(float(height))}" if height else "")
+
+
+def _wall_id(level: str | None, sig: str) -> str:
+    return AUTO_ID + hashlib.sha256(f"{level}|{sig}".encode()).hexdigest()[:12]
 
 
 def _open_attrs(wall_xml: str) -> dict[str, str]:
     return {k: v for k, _, v in ATTR_RE.findall(wall_xml[: wall_xml.index(">")])}
 
 
+def _unedited(wall_xml: str, prop: re.Match[str]) -> bool:
+    """Exactly as written: same attributes and id, no added children, geometry + height within SIG_TOL_CM."""
+    attrs = _open_attrs(wall_xml)
+    if set(attrs) - WRITTEN_ATTRS or re.search(r"<(?!/?wall\b)", wall_xml.replace(prop.group(0), "", 1)):
+        return False
+    try:
+        sig = [float(v) for v in prop.group(3).split(",")]
+        now = [float(attrs[k]) for k in (*GEOMETRY, "height")[: len(sig)]]
+    except (KeyError, ValueError):
+        return False
+    close = len(sig) in (5, 6) and all(abs(a - b) <= SIG_TOL_CM for a, b in zip(now, sig, strict=True))
+    return close and attrs.get("id") == _wall_id(attrs.get("level"), prop.group(3))
+
+
 def untag_edited(text: str) -> tuple[str, int]:
-    """Tagged walls whose geometry left their sig were edited in the GUI: drop the tag, they become hand-traced."""
+    """Tagged walls changed in the GUI (geometry, height, level, style, children): drop the tag, they become hand-traced."""
     n = 0
 
     def fix(m: re.Match[str]) -> str:
         nonlocal n
         prop = AUTO_PROP_RE.search(m.group(0))
-        if prop is None:
-            return m.group(0)
-        attrs = _open_attrs(m.group(0))
-        now = [float(attrs.get(k, "nan")) for k in GEOMETRY]
-        sig = [float(v) for v in prop.group(3).split(",")]
-        if len(sig) == len(now) and all(abs(a - b) <= SIG_TOL_CM for a, b in zip(now, sig, strict=True)):
+        if prop is None or _unedited(m.group(0), prop):
             return m.group(0)
         n += 1
         return m.group(0).replace(prop.group(0), "", 1)
@@ -208,21 +222,22 @@ def untag_edited(text: str) -> tuple[str, int]:
     return WALL_RE.sub(fix, text), n
 
 
-def _wall_xml(level: str | None, w: wl.Wall, height: str) -> str:
-    sig = _sig(w)
-    wid = AUTO_ID + hashlib.sha256(f"{level}|{sig}".encode()).hexdigest()[:12]
+def _wall_xml(level: str | None, w: wl.Wall, height: str) -> tuple[str, str]:
+    sig = _sig(w, height)
+    wid = _wall_id(level, sig)
     lv = f" level='{level}'" if level else ""
     (x1, y1), (x2, y2) = w.p1, w.p2
     coords = f"xStart='{_num(x1)}' yStart='{_num(y1)}' xEnd='{_num(x2)}' yEnd='{_num(y2)}'"
-    return (
-        f"  <wall id='{wid}'{lv} {coords} height='{height}' thickness='{_num(w.thickness)}'>\n"
+    h = f" height='{height}'" if height else ""
+    return wid, (
+        f"  <wall id='{wid}'{lv} {coords}{h} thickness='{_num(w.thickness)}'>\n"
         f"    <property name='{AUTO_PROP}' value='{sig}'/>\n  </wall>\n"
     )
 
 
 def write_walls(text: str, generated: list[tuple[str | None, wl.Wall, str]]) -> str:
-    """Home.xml text in, text out: drop tagged walls and refs to them, insert (level, wall, height) after the last
-    remaining wall (DTD order: walls precede rooms). Every other byte is kept."""
+    """Home.xml text in, text out: drop tagged walls, insert (level, wall, height) after the last remaining wall (DTD
+    order: walls precede rooms), clear refs to dropped ids not re-inserted. Every other byte is kept."""
     removed: set[str] = set()
 
     def drop(m: re.Match[str]) -> str:
@@ -232,15 +247,17 @@ def write_walls(text: str, generated: list[tuple[str | None, wl.Wall, str]]) -> 
         return ""
 
     text = WALL_RE.sub(drop, text)
-    text = re.sub(
-        r"""\s(?:wallAtStart|wallAtEnd)=(['"])([^'"]*)\1""", lambda m: "" if m.group(2) in removed else m.group(0), text
-    )
-    block, seen = "", set()
+    ids = {_open_attrs(m.group(0)).get("id") for m in WALL_RE.finditer(text)}  # an edited wall keeps its auto- id
+    block, new_ids = "", set()
     for level, w, height in generated:
-        xml = _wall_xml(level, w, height)
-        if xml not in seen:
-            seen.add(xml)
+        wid, xml = _wall_xml(level, w, height)
+        if wid not in ids and wid not in new_ids:
+            new_ids.add(wid)
             block += xml
+    gone = removed - new_ids
+    text = re.sub(
+        r"""\s(?:wallAtStart|wallAtEnd)=(['"])([^'"]*)\1""", lambda m: "" if m.group(2) in gone else m.group(0), text
+    )
     last = None
     for last in WALL_RE.finditer(text):
         pass

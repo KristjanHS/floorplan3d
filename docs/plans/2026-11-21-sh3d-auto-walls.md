@@ -1,6 +1,6 @@
 # SH3D auto walls — generate internal walls into Home.xml, user fixes in the GUI
 
-Status: in progress — Stages 1–3.1 + R.1–R.3 committed, R.2 GO; image stages 3.2–4 parked (rooms ruling); next Stage 5. Goal: `make walls NAME=<name>` writes detected walls into `sh3d_src/<NAME>/Home.xml`, tagged as generated;
+Status: in progress — Stages 1–3.1, R.1–R.3, 5 committed (5.1 tag + id survive an SH3D move/save); image stages 3.2–4 parked; next Stage 6. Goal: `make walls NAME=<name>` writes detected walls into `sh3d_src/<NAME>/Home.xml`, tagged as generated;
 the user then edits (not traces) them in SweetHome3D. Measured results (scores, overlay verdicts) → a local results doc, never here.
 
 ## Rulings (user, 2026-11-21)
@@ -82,7 +82,7 @@ Recommend: NEW `scripts/walls.py` (pure numpy/cv2 geometry: segments, pairing, m
   [USER] on a scratch home (`NAME=autotest`, never the real one): push → open in SH3D → move a wall → save → pull; assert property + id survive. Fails → pick the surviving one; record in NOTES.md.
 - **5.2 `write_walls()`.** Remove tagged walls + clear `wallAtStart`/`wallAtEnd` refs to them; skip generated walls that match a traced wall; insert new walls at the DTD-legal position
   (after the last `<wall>`), `level` set, height = the level's `height`, numbers `.`-decimal. Tests: hand walls byte-identical; second run byte-identical (idempotent); dangling ref cleared; DTD clean.
-- **5.3 Edited-tag guard + target.** Tagged wall whose geometry ≠ its sig = user-edited → untag (becomes hand-traced), report. `make walls NAME=` (refuses on dirty `sh3d_src/<NAME>`, like pull).
+- **5.3 Edited-tag guard + target.** Tagged wall ≠ as written (geometry/height vs sig, id ≠ hash(level|sig), extra attrs or children) = user-edited → untag, keep its id (a regenerated twin is skipped), report. `make walls NAME=` (refuses on dirty `sh3d_src/<NAME>`, like pull).
   Tests: edited wall survives a re-run untagged; unedited replaced.
 
 ## Stage 6 — Close

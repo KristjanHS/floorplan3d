@@ -126,7 +126,7 @@ WRITE_DTD = """<!ELEMENT home (level*, wall*, room*)>
 <!ELEMENT wall (property*)>
 <!ATTLIST wall id ID #REQUIRED level IDREF #IMPLIED wallAtStart IDREF #IMPLIED wallAtEnd IDREF #IMPLIED
   xStart CDATA #REQUIRED yStart CDATA #REQUIRED xEnd CDATA #REQUIRED yEnd CDATA #REQUIRED height CDATA #IMPLIED
-  thickness CDATA #REQUIRED>
+  thickness CDATA #REQUIRED pattern CDATA #IMPLIED>
 <!ELEMENT property EMPTY>
 <!ATTLIST property name CDATA #REQUIRED value CDATA #REQUIRED>
 <!ELEMENT room (point+)>
@@ -135,17 +135,27 @@ WRITE_DTD = """<!ELEMENT home (level*, wall*, room*)>
 <!ATTLIST point x CDATA #REQUIRED y CDATA #REQUIRED>
 """
 HAND = "  <wall id='hand' level='L0'{ref} xStart='-100' yStart='-22.5' xEnd='400' yEnd='-22.5' thickness='45'/>\n"
-TAGGED = """  <wall id='{id}' level='L0' xStart='{x}' yStart='300' xEnd='100' yEnd='300' thickness='10'>
-    <property name='floorplan3d.auto' value='{sig}'/>
-  </wall>
-"""
+
+
+def tagged(y: float, x0: str = "0", sig_x0: float = 0, extra: str = "", value: str | None = None) -> str:
+    sig = sh3d_walls._sig(sh3d_walls.wl.Wall((sig_x0, y), (100, y), 10), "260")
+    wid = sh3d_walls._wall_id("L0", sig)
+    return (
+        f"  <wall id='{wid}' level='L0' xStart='{x0}' yStart='{y}' xEnd='100' yEnd='{y}' height='260.0' thickness='10.0'"
+        f"{extra}>\n    <property name='floorplan3d.auto' value='{sig if value is None else value}'/>\n  </wall>\n"
+    )
+
+
+OLD = tagged(300)
 ROOMS = room(0, 0, 100, 200) + room(115, 0, 215, 200) + "\n"
 WRITE_HOME = (
     "<?xml version='1.0'?>\n<home version='7400' name='t' wallHeight='250'>\n  <level id='L0' height='260'/>\n"
-    + HAND.format(ref=" wallAtStart='auto-old'")
-    + TAGGED.format(id="auto-old", x="0", sig="0,300,100,300,10")
-    + TAGGED.format(id="auto-resaved", x="0.004", sig="0,300,100,300,10")  # float reprint: still unedited
-    + TAGGED.format(id="auto-edited", x="-20", sig="0,300,100,300,10")  # moved 20 cm in the GUI
+    + HAND.format(ref=f" wallAtStart='{sh3d_walls._open_attrs(OLD)['id']}'")
+    + OLD
+    + tagged(320, x0="0.004")  # SH3D float reprint: still unedited
+    + tagged(340, x0="-20")  # moved 20 cm in the GUI
+    + tagged(360, extra=" pattern='hatchUp'")  # restyled
+    + tagged(380, value="x")  # unreadable tag
     + ROOMS
     + "</home>\n"
 )
@@ -171,19 +181,42 @@ def home_src(tmp_path: Path) -> Path:
     return tmp_path / "src" / "x" / "Home.xml"
 
 
+def auto_walls(text: str) -> list[str]:
+    return [w for w in sh3d_walls.WALL_RE.findall(text) if "<wall id='auto-" in w]
+
+
 def test_write_replaces_tagged_keeps_edited_and_hand_walls(home_src: Path, tmp_path: Path) -> None:
     assert sh3d_walls.main(write_cli(tmp_path)) == 0
     out = home_src.read_text()
     assert HAND.format(ref="") in out  # dangling ref to the replaced wall cleared, rest byte-identical
-    assert "auto-old" not in out and "auto-resaved" not in out
-    edited = out[out.index("<wall id='auto-edited'") :].split("</wall>")[0]
-    assert sh3d_walls.AUTO_PROP not in edited
-    (new,) = [w for w in sh3d_walls.WALL_RE.findall(out) if sh3d_walls.AUTO_PROP in w]
+    walls = auto_walls(out)
+    assert not any("yStart='300'" in w or "yStart='320'" in w for w in walls)
+    kept = [w for w in walls if sh3d_walls.AUTO_PROP not in w]
+    assert sorted(w.split("yStart='")[1][:3] for w in kept) == ["340", "360", "380"]
+    (new,) = [w for w in walls if sh3d_walls.AUTO_PROP in w]
     assert "level='L0'" in new and "height='260'" in new and "thickness='15'" in new
     assert out.endswith(ROOMS + "</home>\n")
+    wid = sh3d_walls._open_attrs(new)["id"]
+    home_src.write_text(out.replace(HAND.format(ref=""), HAND.format(ref=f" wallAtEnd='{wid}'")))
+    joined = home_src.read_text()
     git(tmp_path / "src", "commit", "-q", "-am", "w")
     assert sh3d_walls.main(write_cli(tmp_path)) == 0
-    assert home_src.read_text() == out  # idempotent
+    assert home_src.read_text() == joined  # idempotent; the hand wall's join to a re-inserted id survives
+
+
+def test_write_edited_wall_keeps_its_id_no_duplicate(home_src: Path, tmp_path: Path) -> None:
+    assert sh3d_walls.main(write_cli(tmp_path)) == 0
+    out = home_src.read_text()
+    (new,) = [w for w in auto_walls(out) if sh3d_walls.AUTO_PROP in w]
+    x = sh3d_walls._open_attrs(new)["xStart"]
+    moved = new.replace(f"xStart='{x}' ", f"xStart='{float(x) + 20}' ").replace(
+        f"xEnd='{x}' ", f"xEnd='{float(x) + 20}' "
+    )
+    home_src.write_text(out.replace(new, moved))
+    git(tmp_path / "src", "commit", "-q", "-am", "moved")
+    assert sh3d_walls.main(write_cli(tmp_path)) == 0  # was: DTD duplicate ID, Home.xml restored
+    again = home_src.read_text()
+    assert again.count(sh3d_walls._open_attrs(new)["id"]) == 1 and sh3d_walls.AUTO_PROP not in moved.split(">")[0]
 
 
 def test_write_refuses_dirty_tree(home_src: Path, tmp_path: Path) -> None:
