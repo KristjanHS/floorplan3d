@@ -131,7 +131,7 @@ def pair(faces: list[Wall], px_per_cm: float) -> list[Wall]:
         if overlap < min(MIN_OVERLAP * min(a.length, b.length), MIN_SEG_CM * px_per_cm) or not lo <= gap <= hi:
             continue
         cands.append((gap, i, j, p, q))
-    return _claim(cands, faces, STROKE_PX, MIN_SEG_CM * px_per_cm)
+    return [w for w, _ in _claim(cands, faces, STROKE_PX, math.inf)]  # inf: image path keeps reject-whole
 
 
 def _subtract(free: list[tuple[float, float]], a: float, b: float) -> list[tuple[float, float]]:
@@ -140,11 +140,11 @@ def _subtract(free: list[tuple[float, float]], a: float, b: float) -> list[tuple
 
 def _claim(
     cands: list[tuple[float, int, int, np.ndarray, np.ndarray]], faces: list[Wall], tol: float, min_len: float
-) -> list[Wall]:
-    """Nearest gap first; a candidate keeps the stretches where both faces are still unclaimed (a claim overlapping
-    it by <= tol is ignored). Clipped pieces shorter than min_len drop; an unclipped candidate stays whole."""
+) -> list[tuple[Wall, bool]]:
+    """Nearest gap first; (piece, clipped) for each stretch where both faces are still unclaimed (a claim overlapping
+    by <= tol is ignored). Clipped pieces shorter than min_len drop; an unclipped candidate stays whole."""
     used: dict[int, list[tuple[float, float]]] = {}
-    out: list[Wall] = []
+    out: list[tuple[Wall, bool]] = []
     for gap, i, j, p, q in sorted(cands, key=lambda c: c[0]):
         length = float(np.linalg.norm(q - p))
         if length == 0:
@@ -160,14 +160,15 @@ def _claim(
                 a, b = sorted(((u0 - s) / c, (u1 - s) / c))
                 if min(b, length) - max(a, 0.0) > tol:
                     free = _subtract(free, a, b)
+        clipped = free != [(0.0, length)]
         for t0, t1 in free:
-            if (t0, t1) != (0.0, length) and t1 - t0 < min_len:
+            if clipped and t1 - t0 < min_len:
                 continue
             for k, (s, c) in face_t.items():
                 f0, f1 = s + c * t0, s + c * t1
                 used.setdefault(k, []).append((min(f0, f1), max(f0, f1)))
             p0, p1 = p + dc * t0, p + dc * t1
-            out.append(Wall((float(p0[0]), float(p0[1])), (float(p1[0]), float(p1[1])), gap))
+            out.append((Wall((float(p0[0]), float(p0[1])), (float(p1[0]), float(p1[1])), gap), clipped))
     return out
 
 
@@ -296,8 +297,9 @@ def gap_walls(rooms: list[list[Point]], anchors: list[Wall], gap_cm: tuple[float
         overlap, gap, p, q = _between(a, b)
         if overlap >= ROOM_MIN_OVERLAP_CM and gap <= hi:  # touching pairs (gap < lo) claim their stretch, then drop
             cands.append((gap, i, j, p, q))
-    claimed = [w for w in _claim(cands, [e for _, e in edges], 5.0, ROOM_MIN_OVERLAP_CM) if w.thickness >= lo]
-    merged = merge(claimed, 1.0)
+    claimed = [(w, c) for w, c in _claim(cands, [e for _, e in edges], 5.0, ROOM_MIN_OVERLAP_CM) if w.thickness >= lo]
+    # clipped pieces skip merge: MERGE_GAP_CM would bridge the claimed stretch between them
+    merged = merge([w for w, c in claimed if not c], 1.0) + [w for w, c in claimed if c]
     return snap(merged + anchors, 1.0)[: len(merged)]
 
 

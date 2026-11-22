@@ -221,6 +221,10 @@ def test_claim_clips_partly_shadowed_strip() -> None:
     (h,) = walls.holes(rooms, [])
     assert h.thickness == pytest.approx(64)
     assert sorted([h.p1, h.p2]) == [pytest.approx((132, 100)), pytest.approx((132, 200))]
+    # a shadow mid-strip leaves two pieces, never re-merged across it
+    mid = [rect(0, 0, 100, 300), rect(115, 100, 150, 200), rect(164, 0, 264, 300)]
+    ys = sorted(sorted([h.p1[1], h.p2[1]]) for h in walls.holes(mid, []))
+    assert ys == [pytest.approx([0, 100]), pytest.approx([200, 300])]
 
 
 def test_gap_walls_touching_rooms_open() -> None:
