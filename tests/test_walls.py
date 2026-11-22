@@ -177,3 +177,32 @@ def test_score_pass_threshold() -> None:
     assert not walls.score(gen[:6], traced).passed
     empty = walls.score(gen, {"outer": traced["outer"]})
     assert (empty.ratio, empty.passed) == (None, False)
+
+
+def rect(x0: float, y0: float, x1: float, y1: float) -> list[tuple[float, float]]:
+    return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+
+
+def test_gap_walls_between_facing_rooms_only() -> None:
+    # two 10 cm shafts 15 cm apart: own opposite edges (10) and the far edges (35) are in range but no wall
+    (w,) = walls.gap_walls([rect(0, 0, 10, 200), rect(25, 0, 35, 200)], [])
+    assert w.thickness == pytest.approx(15)
+    assert sorted([w.p1, w.p2]) == [pytest.approx((17.5, 0)), pytest.approx((17.5, 200))]
+
+
+def test_gap_walls_touching_rooms_open() -> None:
+    assert walls.gap_walls([rect(0, 0, 100, 100), rect(100, 0, 200, 100)], []) == []
+
+
+def test_gap_walls_room_to_wall_face_snaps_to_anchor() -> None:
+    outer = Wall((-22.5, -100), (-22.5, 300), 45)  # inner face x = 0
+    room = rect(19.5, 0, 300, 200)
+    top = Wall((-45, -22.5), (300, -22.5), 45)  # inner face y = 0, touching the room: open, but an anchor
+    (w,) = walls.gap_walls([room], [outer, top])
+    assert w.thickness == pytest.approx(19.5)
+    assert sorted([w.p1, w.p2]) == [pytest.approx((9.75, -22.5)), pytest.approx((9.75, 200))]
+
+
+def test_gap_walls_skip_anchor_to_anchor_gaps() -> None:
+    a, b = Wall((0, 0), (0, 300), 20), Wall((30, 0), (30, 300), 20)  # faces 10 cm apart, no room between
+    assert walls.gap_walls([], [a, b]) == []
