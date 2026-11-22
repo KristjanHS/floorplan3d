@@ -1,7 +1,7 @@
 """Wall geometry, no XML: LSD face segments -> parallel pairs -> merged, snapped centre lines. Plan: docs/plans/2026-11-21-sh3d-auto-walls.md."""
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import combinations
 
 import cv2
@@ -15,6 +15,8 @@ PARALLEL_DEG = 2.0
 MIN_OVERLAP = 0.6
 MERGE_OFFSET_CM, MERGE_GAP_CM, MERGE_DEG = 5.0, 100.0, 2.0
 SNAP_CM = 15.0
+MATCH_DIST_CM, MATCH_DEG, MATCH_COVER = 10.0, 3.0, 0.5
+PASS_RATIO = 0.70
 
 Point = tuple[float, float]
 
@@ -185,3 +187,48 @@ def snap(walls: list[Wall], px_per_cm: float) -> list[Wall]:
 
 def detect(img: np.ndarray, px_per_cm: float) -> list[Wall]:
     return snap(merge(pair(segments(img, px_per_cm), px_per_cm), px_per_cm), px_per_cm)
+
+
+def _cover(t: Wall, g: Wall) -> tuple[float, float] | None:
+    """Stretch of traced t (cm along t from t.p1) covered by generated g within MATCH_DEG and MATCH_DIST_CM, else None."""
+    if _angle(t, g) > MATCH_DEG:
+        return None
+    d, n = _axes(t)
+    s0, s1, _ = _span(t, g)
+    s0, s1 = max(s0, 0.0), min(s1, t.length)
+    if s1 <= s0:
+        return None
+    dg = _axes(g)[0]
+    m = (s0 + s1) / 2
+    q = np.asarray(g.p1) + dg * ((m - float(np.subtract(g.p1, t.p1) @ d)) / float(dg @ d))
+    return (s0, s1) if abs(float(np.subtract(q, t.p1) @ n)) <= MATCH_DIST_CM else None
+
+
+@dataclass
+class Score:
+    total: int  # traced walls with thickness inside GAP_CM (the ground truth)
+    unmatched: list[str] = field(default_factory=list)
+    extras: int = 0  # generated walls near no traced wall; reported, not gated
+
+    @property
+    def ratio(self) -> float | None:
+        return (self.total - len(self.unmatched)) / self.total if self.total else None
+
+    @property
+    def passed(self) -> bool:
+        return self.ratio is not None and self.ratio >= PASS_RATIO
+
+
+def score(generated: list[Wall], traced: dict[str, Wall]) -> Score:
+    """Plan cm. A traced wall matches when the union of generated stretches near it covers MATCH_COVER of its length."""
+    truth = {k: t for k, t in traced.items() if GAP_CM[0] <= t.thickness <= GAP_CM[1]}
+    out = Score(len(truth))
+    for k, t in truth.items():
+        covered, end = 0.0, 0.0
+        for s0, s1 in sorted(c for g in generated if (c := _cover(t, g))):
+            covered += max(0.0, s1 - max(s0, end))
+            end = max(end, s1)
+        if covered < MATCH_COVER * t.length:
+            out.unmatched.append(k)
+    out.extras = sum(1 for g in generated if not any(_cover(t, g) for t in traced.values()))
+    return out

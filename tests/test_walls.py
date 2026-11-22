@@ -151,3 +151,29 @@ def test_detect_staggered_t_junctions() -> None:
     found = walls.detect(plan_image(drawn, None, (900, 1100)), PPC)
     (corridor,) = [w for w in found if abs(w.p1[1] - w.p2[1]) < 5]
     assert sorted([corridor.p1[0], corridor.p2[0]]) == pytest.approx([92, 1008], abs=3)
+
+
+def test_score_tolerance_edges() -> None:
+    traced = {"t": Wall((0, 0), (200, 0), 15)}
+    for off, tilt, hit in ((9, 0, True), (11, 0, False), (0, 2.9, True), (0, 3.1, False)):
+        dy = 100 * math.tan(math.radians(tilt))
+        g = Wall((0, off - dy), (200, off + dy), 15)
+        assert (walls.score([g], traced).unmatched == []) is hit, (off, tilt)
+
+
+def test_score_unions_split_pieces() -> None:
+    traced = {"t": Wall((0, 0), (200, 0), 15)}
+    a, b = Wall((0, 0), (60, 0), 15), Wall((120, 0), (180, 0), 15)  # 30 % each, 60 % together
+    assert walls.score([a, b], traced).unmatched == []
+    assert walls.score([a, Wall((0, 0), (60, 0), 15)], traced).unmatched == ["t"]  # overlap counted once
+
+
+def test_score_pass_threshold() -> None:
+    traced = {f"t{i}": Wall((0, 100 * i), (200, 100 * i), 15) for i in range(10)}
+    traced["outer"] = Wall((0, -100), (200, -100), 45)  # thicker than GAP_CM: not ground truth
+    gen = [Wall((0, 100 * i), (200, 100 * i), 15) for i in range(7)] + [Wall((500, 0), (500, 300), 15)]
+    s = walls.score(gen, traced)
+    assert (s.total, s.ratio, s.passed, s.extras) == (10, 0.7, True, 1)
+    assert not walls.score(gen[:6], traced).passed
+    empty = walls.score(gen, {"outer": traced["outer"]})
+    assert (empty.ratio, empty.passed) == (None, False)
