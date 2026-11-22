@@ -11,6 +11,7 @@ the user then edits (not traces) them in SweetHome3D. Measured results (scores, 
 - Detect on the level's embedded background image (it is the trace PNG — no second px frame).
 - Re-run replaces ONLY tagged walls; hand-traced walls never touched. `make push NAME=` repacks unchanged.
 - `scripts/preprocess.py` `wall_mask` is NOT reused (fails on double-line + hatching walls).
+- (2026-11-22) Hatch: axis-only faces (0°/90° ± `PARALLEL_DEG`); diagonal walls are hand-traced. Score: coverage = union of matching pieces; zero-traced level → n/a, overall FAIL.
 
 ## Known facts (SH3D 7.6.1 source, `work/sh3d-src/`)
 - Background px → plan cm: `x = u·s − xOrigin`, `y = v·s − yOrigin`, `s = scaleDistance / |start−end|`; scale points in image px, origins in cm
@@ -50,7 +51,7 @@ Recommend: NEW `scripts/walls.py` (pure numpy/cv2 geometry: segments, pairing, m
   Tests: fixture thicknesses recovered ±2 px, centre ±1 px; `test_pair_rejects_gap_outside_range` (50 cm gap → none); `test_pair_requires_overlap`.
 - **2.3 Merge + snap.** `merge(walls)` joins collinear pieces; `snap(walls)` moves endpoints within `SNAP_CM` onto shared junction points.
   Tests: `test_merge_collinear_across_door_gap`, `test_snap_l_and_t_junctions`; falsifier: two parallel walls 30 cm apart must NOT merge.
-- **2.4 Hatch in thick walls.** 45° hatch in 40 cm walls (~44 px) survives `MIN_SEG_CM` and pairs into junk diagonals; retune or angle-filter.
+- **2.4 Hatch in thick walls.** `segments()` keeps only faces within `PARALLEL_DEG` of 0°/90° (45° hatch in 40 cm walls otherwise pairs into junk diagonals).
   Test: thick-wall fixture `detect()` returns exactly its walls, free ends at the drawn overhang.
 
 ## Stage 3 — Score + overlay (thinnest visible slice; no Home.xml writes)
