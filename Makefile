@@ -26,7 +26,7 @@ $(error NAME='$(NAME)' must match [A-Za-z0-9_-]+)
 endif
 endif
 
-.PHONY: help sync check whitespace lint fmt test test-legacy audit push-gate setup-hooks pre-commit upstream-test preprocess convert export models probe sh3d-dtd $(SH3D_CMDS)
+.PHONY: help sync check whitespace lint fmt test test-legacy audit push-gate setup-hooks pre-commit upstream-test preprocess convert export models probe sh3d-dtd window-lib $(SH3D_CMDS)
 
 help:
 	@echo "make sync     - uv sync (locked, all groups) + uv pip check"
@@ -44,6 +44,7 @@ help:
 	@echo "make walls-overlay NAME=<home> - traced walls drawn on each level image -> work/walls/, prints ink-hit rate"
 	@echo "make walls-rooms NAME=<home> - dry run: walls from room gaps + 40-100 cm holes -> work/walls/<home>-L<i>-rooms.png"
 	@echo "make walls NAME=<home> - write room-gap walls into sh3d_src/<home>/Home.xml, tagged; re-run replaces unedited ones"
+	@echo "make window-lib [SIZES='100x140 60x90'] - coupled wooden window library -> output/sh3d/coupled-windows.sh3f (SH3D: Furniture > Import furniture library)"
 	@echo "make sh3d-dtd  - rebuild work/sh3d/SweetHome3D.dtd from SH3D_SRC_ZIP (validate/push run it)"
 	@echo "make upstream-test - upstream's own tests, sandboxed (no display tests)"
 	@echo "make audit    - uv audit: known vulnerabilities in uv.lock"
@@ -136,6 +137,11 @@ walls-rooms:
 
 walls:
 	uv run python scripts/sh3d_walls.py write $(NAME)
+
+# SIZES = space-separated <width>x<height> cm, e.g. SIZES="100x140 60x90"; empty = one 100x140 window.
+window-lib:
+	uv run python scripts/sh3d_window.py $(foreach s,$(SIZES),--size $(s)) --preview output/sh3d/coupled-window-preview.png
+	@wslpath -w "$$(realpath output/sh3d/coupled-windows.sh3f)"
 
 push:
 	$(SH3D) push $(NAME)
