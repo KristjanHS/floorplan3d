@@ -213,6 +213,16 @@ def test_holes_not_fused_with_collinear_walls() -> None:
     assert sorted([h.p1[1], h.p2[1]]) == pytest.approx([50, 200])
 
 
+def test_claim_clips_partly_shadowed_strip() -> None:
+    # room B shadows only y 0..100 of the 64 cm strip between A and C; the rest stays a hole
+    rooms = [rect(0, 0, 100, 200), rect(115, 0, 150, 100), rect(164, 0, 264, 200)]
+    (w,) = [w for w in walls.gap_walls(rooms, []) if w.thickness == pytest.approx(15)]
+    assert sorted([w.p1, w.p2]) == [pytest.approx((107.5, 0)), pytest.approx((107.5, 100))]
+    (h,) = walls.holes(rooms, [])
+    assert h.thickness == pytest.approx(64)
+    assert sorted([h.p1, h.p2]) == [pytest.approx((132, 100)), pytest.approx((132, 200))]
+
+
 def test_gap_walls_touching_rooms_open() -> None:
     assert walls.gap_walls([rect(0, 0, 100, 100), rect(100, 0, 200, 100)], []) == []
     assert walls.gap_walls([rect(0, 0, 100, 100), rect(100.5, 0, 200, 100)], []) == []

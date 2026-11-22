@@ -102,10 +102,6 @@ def _axial(w: Wall) -> bool:
     return math.degrees(math.asin(min(1.0, min(abs(float(d[0])), abs(float(d[1])))))) <= PARALLEL_DEG
 
 
-def _free(used: list[tuple[float, float]], t0: float, t1: float, tol: float) -> bool:
-    return all(min(t1, u1) - max(t0, u0) <= tol for u0, u1 in used)
-
-
 def _between(a: Wall, b: Wall) -> tuple[float, float, np.ndarray, np.ndarray]:
     """Overlap length, face gap at the overlap midpoint and the centre-line ends; symmetric in a and b."""
     da, db = _axes(a)[0], _axes(b)[0]
@@ -135,23 +131,43 @@ def pair(faces: list[Wall], px_per_cm: float) -> list[Wall]:
         if overlap < min(MIN_OVERLAP * min(a.length, b.length), MIN_SEG_CM * px_per_cm) or not lo <= gap <= hi:
             continue
         cands.append((gap, i, j, p, q))
-    return _claim(cands, faces, STROKE_PX)
+    return _claim(cands, faces, STROKE_PX, MIN_SEG_CM * px_per_cm)
 
 
-def _claim(cands: list[tuple[float, int, int, np.ndarray, np.ndarray]], faces: list[Wall], tol: float) -> list[Wall]:
-    """Nearest gap first; a candidate survives only while both its face stretches are unclaimed."""
+def _subtract(free: list[tuple[float, float]], a: float, b: float) -> list[tuple[float, float]]:
+    return [(s, e) for f0, f1 in free for s, e in ((f0, min(f1, a)), (max(f0, b), f1)) if e > s]
+
+
+def _claim(
+    cands: list[tuple[float, int, int, np.ndarray, np.ndarray]], faces: list[Wall], tol: float, min_len: float
+) -> list[Wall]:
+    """Nearest gap first; a candidate keeps the stretches where both faces are still unclaimed (a claim overlapping
+    it by <= tol is ignored). Clipped pieces shorter than min_len drop; an unclipped candidate stays whole."""
     used: dict[int, list[tuple[float, float]]] = {}
     out: list[Wall] = []
     for gap, i, j, p, q in sorted(cands, key=lambda c: c[0]):
-        stretch: dict[int, tuple[float, float]] = {}
-        for k in (i, j):
-            t0, t1 = sorted(float(np.subtract(x, faces[k].p1) @ _axes(faces[k])[0]) for x in (p, q))
-            stretch[k] = (t0, t1)
-        if not all(_free(used.get(k, []), *stretch[k], tol) for k in (i, j)):
+        length = float(np.linalg.norm(q - p))
+        if length == 0:
             continue
+        dc = (q - p) / length
+        free = [(0.0, length)]
+        face_t: dict[int, tuple[float, float]] = {}  # face k's axis position = s + c·t at candidate position t
         for k in (i, j):
-            used.setdefault(k, []).append(stretch[k])
-        out.append(Wall((float(p[0]), float(p[1])), (float(q[0]), float(q[1])), gap))
+            d = _axes(faces[k])[0]
+            s, c = float(np.subtract(p, faces[k].p1) @ d), float(dc @ d)
+            face_t[k] = (s, c)
+            for u0, u1 in used.get(k, []):
+                a, b = sorted(((u0 - s) / c, (u1 - s) / c))
+                if min(b, length) - max(a, 0.0) > tol:
+                    free = _subtract(free, a, b)
+        for t0, t1 in free:
+            if (t0, t1) != (0.0, length) and t1 - t0 < min_len:
+                continue
+            for k, (s, c) in face_t.items():
+                f0, f1 = s + c * t0, s + c * t1
+                used.setdefault(k, []).append((min(f0, f1), max(f0, f1)))
+            p0, p1 = p + dc * t0, p + dc * t1
+            out.append(Wall((float(p0[0]), float(p0[1])), (float(p1[0]), float(p1[1])), gap))
     return out
 
 
@@ -280,7 +296,7 @@ def gap_walls(rooms: list[list[Point]], anchors: list[Wall], gap_cm: tuple[float
         overlap, gap, p, q = _between(a, b)
         if overlap >= ROOM_MIN_OVERLAP_CM and gap <= hi:  # touching pairs (gap < lo) claim their stretch, then drop
             cands.append((gap, i, j, p, q))
-    claimed = [w for w in _claim(cands, [e for _, e in edges], 5.0) if w.thickness >= lo]
+    claimed = [w for w in _claim(cands, [e for _, e in edges], 5.0, ROOM_MIN_OVERLAP_CM) if w.thickness >= lo]
     merged = merge(claimed, 1.0)
     return snap(merged + anchors, 1.0)[: len(merged)]
 
