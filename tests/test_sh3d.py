@@ -445,3 +445,28 @@ def test_dtd_refuses_unpinned_zip(roots: sh3d.Roots, tmp_path: Path, capsys: pyt
     assert run(roots, "dtd", "--src-zip", str(src_zip)) == 1
     assert "!= pinned" in capsys.readouterr().err
     assert not roots.dtd.exists()
+
+
+def test_gui_save_auto_pulls_and_commits(roots: sh3d.Roots, pulled: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    commit(roots.src)
+    saved = [(n, HOME_XML.replace(b"x='100'", b"x='102'") if n == "Home.xml" else d, c) for n, d, c in ENTRIES]
+    make_sh3d(roots.sh3d("x"), saved)
+    assert run(roots, "validate", "x") == 0
+    assert "auto-pull: x saved in SH3D" in capsys.readouterr().out
+    assert b"x='102'" in (pulled / "Home.xml").read_bytes()
+    status = subprocess.run(
+        ["git", "-C", str(roots.src), "status", "--porcelain"], check=True, capture_output=True, text=True
+    )
+    assert status.stdout == ""
+    assert run(roots, "validate", "x") == 0
+    assert "auto-pull" not in capsys.readouterr().out  # in sync now: no second pull
+
+
+def test_auto_pull_refuses_unpushed_edits(roots: sh3d.Roots, pulled: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    commit(roots.src)
+    edit_xml(pulled, b"x='100'", b"x='101'")
+    commit(roots.src)
+    make_sh3d(roots.sh3d("x"), ENTRIES[1:])
+    assert run(roots, "validate", "x") == 1
+    assert "x has edits not yet pushed" in capsys.readouterr().err
+    assert b"x='101'" in (pulled / "Home.xml").read_bytes()

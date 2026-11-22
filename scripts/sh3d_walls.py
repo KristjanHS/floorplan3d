@@ -315,12 +315,16 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="sh3d_walls", description=__doc__)
     parser.add_argument("--src", type=Path, default=sh3d.ROOT / "sh3d_src")
     parser.add_argument("--work", type=Path, default=sh3d.ROOT / "work")
+    parser.add_argument("--homes", type=Path, default=sh3d.ROOT / "homes")
+    parser.add_argument("--backups", type=Path, default=sh3d.ROOT / "backups")
     sub = parser.add_subparsers(dest="cmd", required=True)
     for cmd in COMMANDS:
         sub.add_parser(cmd).add_argument("name")
     args = parser.parse_args(argv)
     try:
         sh3d.check_name(args.name)
+        dtd = args.work / "sh3d" / "SweetHome3D.dtd"
+        sh3d.sync(sh3d.Roots(homes=args.homes, src=args.src, backups=args.backups, work=args.work, dtd=dtd), args.name)
         COMMANDS[args.cmd](args.src, args.work, args.name)
     except sh3d.Sh3dError as e:
         print(f"sh3d_walls: {e}", file=sys.stderr)

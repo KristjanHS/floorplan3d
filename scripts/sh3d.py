@@ -265,6 +265,22 @@ def pull(roots: Roots, name: str, force: bool = False) -> None:
     print(f"pull: ok {name} — {len(infos)} entries → {tree}")
 
 
+def sync(roots: Roots, name: str) -> None:
+    """Auto-pull: homes/<name>.sh3d saved in the GUI since the last pull -> pull + commit sh3d_src/<name>.
+    Refuses like pull does (uncommitted or unpushed edits in the tree), so nothing is overwritten."""
+    sh3d, meta = roots.sh3d(name), roots.tree(name) / META
+    if not (sh3d.is_file() and meta.is_file()):
+        return
+    if sha256_file(sh3d) == json.loads(meta.read_text(encoding="utf-8"))["source_sha256"]:
+        return
+    pull(roots, name)
+    src = str(roots.src.resolve())
+    subprocess.run(["git", "-C", src, "add", "-A", "--", name], check=True)
+    msg = f"sh3d_src({name}): auto-pull GUI save"
+    subprocess.run(["git", "-C", src, "commit", "-q", "-m", msg, "--", name], check=True)
+    print(f"auto-pull: {name} saved in SH3D since the last pull — pulled and committed")
+
+
 def load_dtd(path: Path) -> etree.DTD:
     if not path.is_file():
         raise Sh3dError(f"DTD not found: {path} — run make sh3d-dtd")
@@ -627,6 +643,8 @@ def main(argv: list[str] | None = None) -> int:
             if args.cmd == "pull":
                 pull(roots, args.name, force=args.force)
             else:
+                if args.cmd != "push":  # push keeps refusing a GUI save: both sides may hold edits
+                    sync(roots, args.name)
                 COMMANDS[args.cmd](roots, args.name)
     except Sh3dError as e:
         print(f"sh3d: {e}", file=sys.stderr)
