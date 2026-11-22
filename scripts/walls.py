@@ -230,6 +230,15 @@ def _cover(t: Wall, g: Wall) -> tuple[float, float] | None:
     return (s0, s1) if abs(float(np.subtract(q, t.p1) @ n)) <= MATCH_DIST_CM else None
 
 
+def matches(g: Wall, traced: list[Wall]) -> bool:
+    """Generated g duplicates a traced wall: traced faces within MATCH_DIST_CM/MATCH_DEG cover MATCH_COVER of g."""
+    covered, end = 0.0, 0.0
+    for s0, s1 in sorted(c for t in traced if (c := _cover(g, t))):
+        covered += max(0.0, s1 - max(s0, end))
+        end = max(end, s1)
+    return covered >= MATCH_COVER * g.length
+
+
 @dataclass
 class Score:
     total: int  # traced walls with thickness inside GAP_CM (the ground truth)

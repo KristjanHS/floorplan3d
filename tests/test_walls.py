@@ -265,3 +265,10 @@ def test_gap_walls_room_slack_to_wall_face_is_touching() -> None:
 def test_gap_walls_skip_anchor_to_anchor_gaps() -> None:
     a, b = Wall((0, 0), (0, 300), 20), Wall((30, 0), (30, 300), 20)  # faces 10 cm apart, no room between
     assert walls.gap_walls([], [a, b]) == []
+
+
+def test_matches_traced_within_tolerance() -> None:
+    g = Wall((0, 0), (200, 0), 15)
+    assert walls.matches(g, [Wall((-50, 9), (300, 9), 10)])
+    assert not walls.matches(g, [Wall((-50, 11), (300, 11), 10)])
+    assert not walls.matches(g, [Wall((0, 0), (80, 0), 10)])  # covers 40 % < MATCH_COVER

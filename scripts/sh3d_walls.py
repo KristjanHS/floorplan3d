@@ -1,7 +1,10 @@
 """Auto walls <-> Home.xml: background px<->cm transform, traced walls, tagged write. Plan: docs/plans/2026-11-21-sh3d-auto-walls.md."""
 
 import argparse
+import codecs
+import hashlib
 import math
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,7 +16,13 @@ from lxml import etree
 import sh3d
 import walls as wl
 
-AUTO_PROP = "floorplan3d.auto"  # Stage 5 tag; tagged walls are never ground truth
+AUTO_PROP = "floorplan3d.auto"  # Stage 5 tag, value = geometry sig; tagged walls are never ground truth
+AUTO_ID = "auto-"
+SIG_TOL_CM = 0.01  # SH3D stores floats: a resave may reprint a coordinate, an edit moves it further
+WALL_RE = re.compile(r"[ \t]*<wall\b[^>]*?(?:/>|(?<!/)>.*?</wall>)[ \t]*\n?", re.DOTALL)
+AUTO_PROP_RE = re.compile(rf"""\s*<property name=(['"]){re.escape(AUTO_PROP)}\1 value=(['"])([^'"]*)\2\s*/>""")
+ATTR_RE = re.compile(r"""(\w+)=(['"])(.*?)\2""")
+GEOMETRY = ("xStart", "yStart", "xEnd", "yEnd", "thickness")
 DARK = 128  # grey level below which a px counts as ink
 INK_RADIUS_PX = 1  # a face sample hits if any px within this radius is ink
 
@@ -166,7 +175,123 @@ def rooms(src: Path, work: Path, name: str) -> None:
         print(f"L{i}: {len(level_rooms)} rooms, {len(gen)} walls{span}, {len(hol)} holes{widths} -> {out}")
 
 
-COMMANDS = {"overlay": overlay, "rooms": rooms}
+def _num(v: float) -> str:
+    out = f"{v:.2f}".rstrip("0").rstrip(".")
+    return "0" if out == "-0" else out
+
+
+def _sig(w: wl.Wall) -> str:
+    return ",".join(_num(v) for v in (*w.p1, *w.p2, w.thickness))
+
+
+def _open_attrs(wall_xml: str) -> dict[str, str]:
+    return {k: v for k, _, v in ATTR_RE.findall(wall_xml[: wall_xml.index(">")])}
+
+
+def untag_edited(text: str) -> tuple[str, int]:
+    """Tagged walls whose geometry left their sig were edited in the GUI: drop the tag, they become hand-traced."""
+    n = 0
+
+    def fix(m: re.Match[str]) -> str:
+        nonlocal n
+        prop = AUTO_PROP_RE.search(m.group(0))
+        if prop is None:
+            return m.group(0)
+        attrs = _open_attrs(m.group(0))
+        now = [float(attrs.get(k, "nan")) for k in GEOMETRY]
+        sig = [float(v) for v in prop.group(3).split(",")]
+        if len(sig) == len(now) and all(abs(a - b) <= SIG_TOL_CM for a, b in zip(now, sig, strict=True)):
+            return m.group(0)
+        n += 1
+        return m.group(0).replace(prop.group(0), "", 1)
+
+    return WALL_RE.sub(fix, text), n
+
+
+def _wall_xml(level: str | None, w: wl.Wall, height: str) -> str:
+    sig = _sig(w)
+    wid = AUTO_ID + hashlib.sha256(f"{level}|{sig}".encode()).hexdigest()[:12]
+    lv = f" level='{level}'" if level else ""
+    (x1, y1), (x2, y2) = w.p1, w.p2
+    coords = f"xStart='{_num(x1)}' yStart='{_num(y1)}' xEnd='{_num(x2)}' yEnd='{_num(y2)}'"
+    return (
+        f"  <wall id='{wid}'{lv} {coords} height='{height}' thickness='{_num(w.thickness)}'>\n"
+        f"    <property name='{AUTO_PROP}' value='{sig}'/>\n  </wall>\n"
+    )
+
+
+def write_walls(text: str, generated: list[tuple[str | None, wl.Wall, str]]) -> str:
+    """Home.xml text in, text out: drop tagged walls and refs to them, insert (level, wall, height) after the last
+    remaining wall (DTD order: walls precede rooms). Every other byte is kept."""
+    removed: set[str] = set()
+
+    def drop(m: re.Match[str]) -> str:
+        if AUTO_PROP_RE.search(m.group(0)) is None:
+            return m.group(0)
+        removed.add(_open_attrs(m.group(0))["id"])
+        return ""
+
+    text = WALL_RE.sub(drop, text)
+    text = re.sub(
+        r"""\s(?:wallAtStart|wallAtEnd)=(['"])([^'"]*)\1""", lambda m: "" if m.group(2) in removed else m.group(0), text
+    )
+    block, seen = "", set()
+    for level, w, height in generated:
+        xml = _wall_xml(level, w, height)
+        if xml not in seen:
+            seen.add(xml)
+            block += xml
+    last = None
+    for last in WALL_RE.finditer(text):
+        pass
+    if last is not None:
+        at = last.end()
+    else:
+        nxt = re.search(r"[ \t]*<(?:room|polyline|dimensionLine|label)\b|[ \t]*</home>", text)
+        if nxt is None:
+            raise sh3d.Sh3dError("Home.xml: no </home>")
+        at = nxt.start()
+    return text[:at] + block + text[at:]
+
+
+def generate(root: etree._Element) -> tuple[list[tuple[str | None, wl.Wall, str]], dict[str | None, tuple[int, int]]]:
+    """Room-gap walls per level, minus those duplicating a hand-traced wall; (level, wall, height) + per-level counts."""
+    traced, rings = traced_walls(root), room_rings(root)
+    levels = [(lv.get("id"), lv.get("height", "")) for lv in root.findall("level")]
+    out: list[tuple[str | None, wl.Wall, str]] = []
+    counts: dict[str | None, tuple[int, int]] = {}
+    for level_id, height in levels or [(None, root.get("wallHeight", ""))]:
+        level_rooms = [r for lv, r in rings if lv == level_id and len(r) >= 3]
+        anchors = [wl.Wall(w.p1, w.p2, w.thickness) for w in traced if w.level_id == level_id]
+        gen = wl.gap_walls(level_rooms, anchors)
+        keep = [w for w in gen if not wl.matches(w, anchors)]
+        out += [(level_id, w, height) for w in keep]
+        counts[level_id] = (len(keep), len(gen) - len(keep))
+    return out, counts
+
+
+def write(src: Path, work: Path, name: str) -> None:
+    """Room-gap walls into sh3d_src/<name>/Home.xml, tagged; re-run replaces only unedited tagged walls."""
+    dtd = sh3d.load_dtd(work / "sh3d" / "SweetHome3D.dtd")
+    sh3d.require_clean(src, name)
+    tree = src / name
+    xml = tree / "Home.xml"
+    before = xml.read_bytes()
+    bom = codecs.BOM_UTF8 if before.startswith(codecs.BOM_UTF8) else b""
+    text, untagged = untag_edited(sh3d.home_xml_bytes(xml).decode())
+    root = etree.fromstring(text.encode(), etree.XMLParser(resolve_entities=False, no_network=True))
+    generated, counts = generate(root)
+    xml.write_bytes(bom + write_walls(text, generated).encode())
+    errors = sh3d.validate_errors(tree, dtd)
+    if errors:
+        xml.write_bytes(before)
+        raise sh3d.Sh3dError(f"write: {len(errors)} error(s), Home.xml restored\n" + "\n".join(errors))
+    for i, (n, skipped) in enumerate(counts.values()):
+        print(f"L{i}: {n} walls written, {skipped} skipped (match a traced wall)")
+    print(f"{untagged} edited auto walls kept as hand-traced")
+
+
+COMMANDS = {"overlay": overlay, "rooms": rooms, "write": write}
 
 
 def main(argv: list[str] | None = None) -> int:

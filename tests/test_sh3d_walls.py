@@ -1,3 +1,4 @@
+import subprocess
 from pathlib import Path
 
 import cv2
@@ -116,3 +117,76 @@ def test_rooms_dry_run_draws_walls_and_holes_without_writing(
     assert (src / "x" / "Home.xml").read_bytes() == before
     out = cv2.imread(str(work / "walls" / "x-L0-rooms.png"))
     assert out is not None and (out == sh3d_walls.ORANGE).all(axis=2).any()
+
+
+WRITE_DTD = """<!ELEMENT home (level*, wall*, room*)>
+<!ATTLIST home version CDATA #IMPLIED name CDATA #IMPLIED wallHeight CDATA #IMPLIED>
+<!ELEMENT level EMPTY>
+<!ATTLIST level id ID #REQUIRED height CDATA #IMPLIED>
+<!ELEMENT wall (property*)>
+<!ATTLIST wall id ID #REQUIRED level IDREF #IMPLIED wallAtStart IDREF #IMPLIED wallAtEnd IDREF #IMPLIED
+  xStart CDATA #REQUIRED yStart CDATA #REQUIRED xEnd CDATA #REQUIRED yEnd CDATA #REQUIRED height CDATA #IMPLIED
+  thickness CDATA #REQUIRED>
+<!ELEMENT property EMPTY>
+<!ATTLIST property name CDATA #REQUIRED value CDATA #REQUIRED>
+<!ELEMENT room (point+)>
+<!ATTLIST room level IDREF #IMPLIED>
+<!ELEMENT point EMPTY>
+<!ATTLIST point x CDATA #REQUIRED y CDATA #REQUIRED>
+"""
+HAND = "  <wall id='hand' level='L0'{ref} xStart='-100' yStart='-22.5' xEnd='400' yEnd='-22.5' thickness='45'/>\n"
+TAGGED = """  <wall id='{id}' level='L0' xStart='{x}' yStart='300' xEnd='100' yEnd='300' thickness='10'>
+    <property name='floorplan3d.auto' value='{sig}'/>
+  </wall>
+"""
+ROOMS = room(0, 0, 100, 200) + room(115, 0, 215, 200) + "\n"
+WRITE_HOME = (
+    "<?xml version='1.0'?>\n<home version='7400' name='t' wallHeight='250'>\n  <level id='L0' height='260'/>\n"
+    + HAND.format(ref=" wallAtStart='auto-old'")
+    + TAGGED.format(id="auto-old", x="0", sig="0,300,100,300,10")
+    + TAGGED.format(id="auto-resaved", x="0.004", sig="0,300,100,300,10")  # float reprint: still unedited
+    + TAGGED.format(id="auto-edited", x="-20", sig="0,300,100,300,10")  # moved 20 cm in the GUI
+    + ROOMS
+    + "</home>\n"
+)
+
+
+def git(cwd: Path, *args: str) -> None:
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "-C", str(cwd), *args], check=True)
+
+
+def write_cli(tmp_path: Path) -> list[str]:
+    return ["--src", str(tmp_path / "src"), "--work", str(tmp_path / "work"), "write", "x"]
+
+
+@pytest.fixture
+def home_src(tmp_path: Path) -> Path:
+    (tmp_path / "work" / "sh3d").mkdir(parents=True)
+    (tmp_path / "work" / "sh3d" / "SweetHome3D.dtd").write_text(WRITE_DTD)
+    (tmp_path / "src" / "x").mkdir(parents=True)
+    (tmp_path / "src" / "x" / "Home.xml").write_text(WRITE_HOME)
+    git(tmp_path / "src", "init", "-q")
+    git(tmp_path / "src", "add", "-A")
+    git(tmp_path / "src", "commit", "-q", "-m", "c")
+    return tmp_path / "src" / "x" / "Home.xml"
+
+
+def test_write_replaces_tagged_keeps_edited_and_hand_walls(home_src: Path, tmp_path: Path) -> None:
+    assert sh3d_walls.main(write_cli(tmp_path)) == 0
+    out = home_src.read_text()
+    assert HAND.format(ref="") in out  # dangling ref to the replaced wall cleared, rest byte-identical
+    assert "auto-old" not in out and "auto-resaved" not in out
+    edited = out[out.index("<wall id='auto-edited'") :].split("</wall>")[0]
+    assert sh3d_walls.AUTO_PROP not in edited
+    (new,) = [w for w in sh3d_walls.WALL_RE.findall(out) if sh3d_walls.AUTO_PROP in w]
+    assert "level='L0'" in new and "height='260'" in new and "thickness='15'" in new
+    assert out.endswith(ROOMS + "</home>\n")
+    git(tmp_path / "src", "commit", "-q", "-am", "w")
+    assert sh3d_walls.main(write_cli(tmp_path)) == 0
+    assert home_src.read_text() == out  # idempotent
+
+
+def test_write_refuses_dirty_tree(home_src: Path, tmp_path: Path) -> None:
+    home_src.write_text(WRITE_HOME + "\n")
+    assert sh3d_walls.main(write_cli(tmp_path)) == 1
+    assert home_src.read_text() == WRITE_HOME + "\n"
