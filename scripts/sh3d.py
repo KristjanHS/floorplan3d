@@ -343,6 +343,11 @@ def validate_errors(tree: Path, dtd: etree.DTD) -> list[str]:
     errors: list[str] = []
     if not dtd.validate(root):
         errors += [f"Home.xml:{err.line}: DTD: {err.message}" for err in dtd.error_log]
+    # The DTD types `level` as IDREF but selectedLevel as CDATA; SH3D maps a dangling one to no level
+    # (HomeXMLHandler): the plan opens empty, with no level tabs.
+    selected = root.get("selectedLevel")
+    if selected is not None and selected not in {el.get("id") for el in root.iter("level")}:
+        errors.append(f"Home.xml:{root.sourceline}: <home selectedLevel={selected!r}> no such <level id>")
     for el in root.iter(etree.Element):
         for attr, value in el.attrib.items():
             where = f"Home.xml:{el.sourceline}: <{el.tag} {attr}={value!r}>"

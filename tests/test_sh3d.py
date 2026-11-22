@@ -145,7 +145,7 @@ def test_pull_refuses_unsafe_entry(roots: sh3d.Roots, capsys: pytest.CaptureFixt
 
 
 SYNTH_DTD = """<!ELEMENT home (level*, (pieceOfFurniture | doorOrWindow)*, wall*, room*)>
-<!ATTLIST home version CDATA #IMPLIED wallHeight CDATA #IMPLIED>
+<!ATTLIST home version CDATA #IMPLIED wallHeight CDATA #IMPLIED selectedLevel CDATA #IMPLIED>
 <!ELEMENT level EMPTY>
 <!ATTLIST level id ID #REQUIRED name CDATA #REQUIRED elevation CDATA #REQUIRED floorThickness CDATA #REQUIRED
   height CDATA #REQUIRED elevationIndex CDATA #IMPLIED>
@@ -217,6 +217,15 @@ def test_validate_collects_number_errors(roots: sh3d.Roots, pulled: Path, capsys
     assert "elevationIndex='1.5'> not an integer" in err
     assert "leftSideColor='#FF0000'> not a hex colour" in err
     assert "rightSideColor" not in err
+
+
+def test_validate_dangling_selected_level(roots: sh3d.Roots, pulled: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    edit_xml(pulled, b"<home version='7600'", b"<home selectedLevel='gone' version='7600'")
+    assert run(roots, "validate", "x") == 1
+    err = capsys.readouterr().err
+    assert "1 error(s)" in err and "selectedLevel='gone'> no such <level id>" in err
+    edit_xml(pulled, b"selectedLevel='gone'", b"selectedLevel='level0'")
+    assert run(roots, "validate", "x") == 0
 
 
 def test_validate_malformed_xml(roots: sh3d.Roots, pulled: Path, capsys: pytest.CaptureFixture[str]) -> None:
