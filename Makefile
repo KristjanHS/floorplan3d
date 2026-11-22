@@ -44,7 +44,7 @@ help:
 	@echo "make walls-overlay NAME=<home> - traced walls drawn on each level image -> work/walls/, prints ink-hit rate"
 	@echo "make walls-rooms NAME=<home> - dry run: walls from room gaps + 40-100 cm holes -> work/walls/<home>-L<i>-rooms.png"
 	@echo "make walls NAME=<home> - write room-gap walls into sh3d_src/<home>/Home.xml, tagged; re-run replaces unedited ones"
-	@echo "make window-lib [SIZES='100x140 60x90'] - coupled wooden window library -> output/sh3d/coupled-windows.sh3f (SH3D: Furniture > Import furniture library)"
+	@echo "make window-lib [SIZES='100x140 200x150=36Dv,164R'] - coupled wooden window library -> output/sh3d/coupled-windows.sh3f (SH3D: Furniture > Import furniture library)"
 	@echo "make sh3d-dtd  - rebuild work/sh3d/SweetHome3D.dtd from SH3D_SRC_ZIP (validate/push run it)"
 	@echo "make upstream-test - upstream's own tests, sandboxed (no display tests)"
 	@echo "make audit    - uv audit: known vulnerabilities in uv.lock"
@@ -138,7 +138,8 @@ walls-rooms:
 walls:
 	uv run python scripts/sh3d_walls.py write $(NAME)
 
-# SIZES = space-separated <width>x<height> cm, e.g. SIZES="100x140 60x90"; empty = one 100x140 window.
+# SIZES = space-separated <width>x<height>[=<weight><L|R|D>[v],...] cm (D = door pair, v = vent), e.g.
+# SIZES="100x140 200x150=36Dv,164R"; empty = one 100x140 window.
 window-lib:
 	uv run python scripts/sh3d_window.py $(foreach s,$(SIZES),--size $(s)) --preview output/sh3d/coupled-window-preview.png
 	@wslpath -w "$$(realpath output/sh3d/coupled-windows.sh3f)"
