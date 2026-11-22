@@ -31,6 +31,7 @@ extraPaths = ["scripts", "vendor/FloorplanToBlender3d"]
 [tool.pytest.ini_options]
 pythonpath = ["scripts"]
 testpaths = ["tests"]
+addopts = "--strict-markers"
 markers = [
     "blender: needs the blender binary (legacy Blender export pipeline); opt-in via make test-legacy",
     "ftb: legacy FTB pipeline (preprocess/convert/probe/sandbox/upstream guard); opt-in via make test-legacy",

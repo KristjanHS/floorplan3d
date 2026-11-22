@@ -74,7 +74,7 @@ fmt:
 
 # Legacy Blender/FTB pipeline tests are opt-in: make test-legacy.
 test:
-	@if [ -d tests ]; then uv run pytest -q -m "not blender and not ftb" || [ $$? -eq 5 ]; else echo "pytest: no tests/ yet"; fi
+	@if [ -d tests ]; then uv run pytest -q -m "not blender and not ftb"; else echo "pytest: no tests/ yet"; fi
 
 test-legacy:
 	uv run pytest -q -m "blender or ftb"

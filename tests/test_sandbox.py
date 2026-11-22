@@ -35,7 +35,7 @@ print(json.dumps({
 }))
 """
 
-pytestmark = [pytest.mark.ftb, pytest.mark.skipif(shutil.which("bwrap") is None, reason="bwrap not on PATH")]
+pytestmark = pytest.mark.skipif(shutil.which("bwrap") is None, reason="bwrap not on PATH")
 
 
 def host_connectable(path: str) -> bool:

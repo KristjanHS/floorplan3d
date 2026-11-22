@@ -54,7 +54,7 @@
   that actually holds is isolation: `scripts/sandbox.py` (bwrap `--unshare-all`, so no network; `--clearenv`;
   repo and Python read-only, `/tmp` a private tmpfs, only named scratch dirs writable). Sessions run on WSL
   directly, not in a devcontainer, so nothing else confines upstream code that runs outside it.
-- Enforced by `scripts/upstream_guard.py` (glue scripts exit on a writable repo) and the Bash hook `scripts/claude_upstream_hook.py`.
+- Enforced by `scripts/upstream_guard.py` (glue scripts exit on a writable repo) The Bash hook `scripts/claude_upstream_hook.py` is unwired (2026-11-22, pipeline retired); re-add it to `.claude/settings.json` as a PreToolUse(Bash) command `python3 -I "$CLAUDE_PROJECT_DIR/scripts/claude_upstream_hook.py"` before running upstream again.
   Tripwire, after the fact only: `find vendor -name '*.pyc'` prints nothing; `make test` fails otherwise.
 
 ## Re-run on every pin bump

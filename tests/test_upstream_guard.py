@@ -91,9 +91,3 @@ def test_hook_emits_a_deny_decision():
     out = json.loads(res.stdout)["hookSpecificOutput"]
     assert out["permissionDecision"] == "deny"
     assert "scripts/sandbox.py" in out["permissionDecisionReason"]
-
-
-def test_settings_wires_the_hook():
-    settings = json.loads((plans.ROOT / ".claude" / "settings.json").read_text())
-    [entry] = [e for e in settings["hooks"]["PreToolUse"] if e["matcher"] == "Bash"]
-    assert any("scripts/claude_upstream_hook.py" in h["command"] for h in entry["hooks"])
