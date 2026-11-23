@@ -78,4 +78,6 @@ The setup assumes WSL with SH3D running on Windows: `make push` prints the path 
 | `make walls-overlay NAME=<home>` | Traced walls on each level image, plus ink-hit rate |
 | `make walls-rooms NAME=<home>` | Dry run of the room-gap walls |
 | `make walls NAME=<home>` | Write the room-gap walls (tagged) into `Home.xml` |
+| `make split-level NAME=<home> FROM= NEW= LINE=x=<v> SIDE=+ ELEV= FT= HEIGHT= [TOL=5] [DRY_RUN=1]` | Move everything beyond a line on level FROM to a new level (crossing walls cut, rooms clipped) |
+| `make raise-walls NAME=<home> LEVEL= LINE=x=<v> SIDE=+ TOP= [TOL=5] [DRY_RUN=1]` | Walls of LEVEL beyond the line get their top at TOP (crossing ones cut first) |
 | `make push NAME=<home>` | Back up, repack, print the path to reopen; then commit `.sh3d_meta.json` in `sh3d_src` |

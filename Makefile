@@ -10,7 +10,7 @@ UT := work/upstream-test
 SH3D_SRC_ZIP ?= work/sh3d-src/SweetHome3D-7.6.1-src.zip
 SH3D_DTD := work/sh3d/SweetHome3D.dtd
 SH3D := uv run python scripts/sh3d.py --dtd $(SH3D_DTD)
-SH3D_CMDS := pull push validate inspect preview add-model walls-overlay walls-rooms walls
+SH3D_CMDS := pull push validate inspect preview add-model walls-overlay walls-rooms walls split-level raise-walls
 
 ifneq ($(filter $(SH3D_CMDS),$(MAKECMDGOALS)),)
 # Command line only: WSL exports NAME=<hostname> into every shell.
@@ -46,6 +46,8 @@ help:
 	@echo "make walls NAME=<home> - write room-gap walls into sh3d_src/<home>/Home.xml, tagged; re-run replaces unedited ones"
 	@echo "make window-lib [SIZES='100x140 200x150=36Dv,164R'] - coupled wooden window library -> output/sh3d/coupled-windows.sh3f (SH3D: Furniture > Import furniture library)"
 	@echo "make add-model NAME=<home> ENTRY=<catalogue id> [LIB=<.sh3f>] - copy a library model into sh3d_src/<home> so push packs it"
+	@echo "make split-level NAME=<home> FROM=<level> NEW=<level> LINE=x=<v>|y=<v> SIDE=+|- ELEV= FT= HEIGHT= [TOL=5] [DRY_RUN=1] - move what lies beyond the line into a new level"
+	@echo "make raise-walls NAME=<home> LEVEL=<level> LINE=x=<v>|y=<v> SIDE=+|- TOP=<abs cm> [TOL=5] [DRY_RUN=1] - walls beyond the line rise to TOP"
 	@echo "make sh3d-dtd  - rebuild work/sh3d/SweetHome3D.dtd from SH3D_SRC_ZIP (validate/push run it)"
 	@echo "make upstream-test - upstream's own tests, sandboxed (no display tests)"
 	@echo "make audit    - uv audit: known vulnerabilities in uv.lock"
@@ -125,7 +127,7 @@ audit:
 sh3d-dtd:
 	$(SH3D) dtd --src-zip $(SH3D_SRC_ZIP)
 
-validate push walls: sh3d-dtd
+validate push walls split-level raise-walls: sh3d-dtd
 
 pull validate inspect preview:
 	$(SH3D) $@ $(NAME)
@@ -142,6 +144,16 @@ walls-rooms:
 
 walls:
 	uv run python scripts/sh3d_walls.py write $(NAME)
+
+SH3D_LEVEL = uv run python scripts/sh3d_level.py
+LEVEL_OPTS = --line '$(LINE)' --side '$(SIDE)' $(if $(TOL),--tol '$(TOL)') $(if $(DRY_RUN),--dry-run)
+
+split-level:
+	$(SH3D_LEVEL) split $(NAME) $(LEVEL_OPTS) --from '$(FROM)' --new '$(NEW)' \
+	  --elevation '$(ELEV)' --floor-thickness '$(FT)' --height '$(HEIGHT)'
+
+raise-walls:
+	$(SH3D_LEVEL) raise-walls $(NAME) $(LEVEL_OPTS) --level '$(LEVEL)' --top '$(TOP)'
 
 # SIZES = space-separated <width>x<height>[=<weight><L|R|D>[v|u],...] cm (D = door pair, v = vent, u = blind raised), e.g.
 # SIZES="100x140 200x150=36Dv,164R"; empty = one 100x140 window.
