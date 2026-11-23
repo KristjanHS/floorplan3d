@@ -88,7 +88,7 @@ def test_split_clips_rooms_moves_lines_and_pieces(split: tuple[str, str]) -> Non
     rooms = [m.group(0) for m in element_re("room").finditer(text)]
     assert len(rooms) == 2 and all("name='Lobby' areaVisible='true'" in r for r in rooms)
     west, east = rooms
-    assert "level='up'" in west and "<point x='100' y='0'/>" in west and "300.0" not in west
+    assert "level='up'" in west and "<point x='100' y='0.0'/>" in west and "300.0" not in west
     assert f"level='{nid}'" in east and "id='r1'" not in east and "<point x='0.0'" not in east
     dims = elements(text, "dimensionLine")
     assert (dims["dl1"]["level"], dims["dl2"]["level"]) == ("up", nid)
@@ -102,6 +102,34 @@ def test_split_clips_rooms_moves_lines_and_pieces(split: tuple[str, str]) -> Non
         "260.0",
     )
     assert elements(text, "wall")["g1"]["level"] == "gr"
+
+
+def test_split_keeps_unchanged_coordinate_strings() -> None:
+    w1 = "xStart='0.0' yStart='0.0' xEnd='300.0' yEnd='0.0'"
+    home = HOME.replace(w1, "xStart='-0.12345' yStart='0.54321' xEnd='300.0' yEnd='0.54321'")
+    home = home.replace("<point x='0.0' y='0.0'/>", "<point x='0.0' y='0.54321'/>")
+    home = home.replace("<point x='300.0' y='0.0'/>", "<point x='300.0' y='0.54321'/>")
+    text, _, nid = split_text(home, "Upper", "Upper b", LINE, 336.0, 30.0, 260.0)
+    walls = elements(text, "wall")
+    assert (walls["w1"]["xStart"], walls["w1"]["yStart"], walls["w1"]["yEnd"]) == ("-0.12345", "0.54321", "0.54321")
+    assert any(a["level"] == nid and a["yStart"] == "0.54321" and a["xStart"] == "100" for a in walls.values())
+    rooms = [m.group(0) for m in element_re("room").finditer(text)]
+    assert all("<point x='100' y='0.54321'/>" in r for r in rooms)
+
+
+def test_split_refuses_a_room_crossing_the_line_twice() -> None:
+    u = "".join(
+        f"    <point x='{x}' y='{y}'/>\n"
+        for x, y in ((0, 0), (300, 0), (300, 200), (200, 200), (200, 100), (150, 100), (150, 200), (0, 200))
+    )
+    home = HOME.replace(
+        "    <point x='0.0' y='0.0'/>\n    <point x='300.0' y='0.0'/>\n"
+        "    <point x='300.0' y='200.0'/>\n    <point x='0.0' y='200.0'/>\n",
+        u,
+    )
+    assert home != HOME
+    with pytest.raises(sh3d.Sh3dError, match="more than once"):
+        split_text(home, "Upper", "Upper b", Line.parse("y=150", "+", 5), 336.0, 30.0, 260.0)
 
 
 def test_split_refuses_crossing_arc_and_unknown_level() -> None:

@@ -128,8 +128,8 @@ class Part:
     def xml(self, original: str) -> str:
         (x1, y1), (x2, y2) = self.start, self.end
         now = open_attrs(original)
-        coords = {k: fmt_num(v) for k, v in zip(("xStart", "yStart", "xEnd", "yEnd"), (x1, y1, x2, y2), strict=True)}
-        coords = {k: v for k, v in coords.items() if float(now[k]) != float(v)}  # the outer end keeps its string
+        keys, values = ("xStart", "yStart", "xEnd", "yEnd"), (x1, y1, x2, y2)
+        coords = {k: fmt_num(v) for k, v in zip(keys, values, strict=True) if float(now[k]) != v}  # unchanged: kept
         return set_attrs(original, id=self.id, level=self.level, **self.refs, **coords, **self.heights)
 
 
@@ -230,13 +230,13 @@ def clip(points: list[Point], line: Line, keep_side: bool) -> list[Point]:
 POINT_RE = re.compile(r"""([ \t]*)<point x=(['"])([^'"]*)\2 y=\2([^'"]*)\2\s*/>\n?""")
 
 
-def room_with_points(room_xml: str, points: list[Point], originals: dict[Point, tuple[str, str]]) -> str:
+def room_with_points(room_xml: str, points: list[Point], originals: tuple[dict[float, str], dict[float, str]]) -> str:
     """Replace the room's <point> block; original vertices keep their exact x/y strings."""
     found = list(POINT_RE.finditer(room_xml))
     indent, q = found[0].group(1), found[0].group(2)
     block = ""
     for p in points:
-        x, y = originals.get(p, (fmt_num(p[0]), fmt_num(p[1])))
+        x, y = (originals[i].get(p[i]) or fmt_num(p[i]) for i in (0, 1))
         block += f"{indent}<point x={q}{x}{q} y={q}{y}{q}/>\n"
     return room_xml[: found[0].start()] + block + room_xml[found[-1].end() :]
 
@@ -246,7 +246,8 @@ def split_rooms(text: str, lid: str, nid: str, line: Line, report: Report) -> st
         xml, a = m.group(0), open_attrs(m.group(0))
         if a.get("level") != lid:
             return xml
-        originals = {(float(x), float(y)): (x, y) for _, _, x, y in POINT_RE.findall(xml)}
+        found = POINT_RE.findall(xml)
+        originals = ({float(x): x for _, _, x, _ in found}, {float(y): y for _, _, _, y in found})
         pts = [(float(x), float(y)) for _, _, x, y in POINT_RE.findall(xml)]
         decision = line.classify(pts)
         report.add("room", a.get("id"), decision)
@@ -254,6 +255,9 @@ def split_rooms(text: str, lid: str, nid: str, line: Line, report: Report) -> st
             return set_attrs(xml, level=nid)
         if decision == STAY:
             return xml
+        signs = [d > 0 for d in map(line.dist, pts) if d != 0]
+        if sum(a != b for a, b in zip(signs, signs[1:] + signs[:1], strict=True)) > 2:
+            raise sh3d.Sh3dError(f"room {a.get('id')} crosses the line more than once — split it by hand first")
         stay, side = clip(pts, line, False), clip(pts, line, True)
         moved = set_attrs(room_with_points(xml, side, originals), id=new_id("room"), level=nid)
         return room_with_points(xml, stay, originals) + moved
