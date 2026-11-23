@@ -217,8 +217,8 @@ def test_raised_blind_stacks_every_slat_at_the_top() -> None:
         VENT_RAISED,
         PAIR,
         POSTED,
-        sw.Spec(100, 140, (sw.Leaf(1, "L", vent=True),)),  # all vent: the knob alone sets the depth
-        sw.Spec(60, 140, (sw.Leaf(1, "D", vent=True),)),
+        sw.Spec(100, 140, (sw.Leaf(1, "L", vent=True),)),  # all vent: its lever alone sets the depth
+        sw.Spec(60, 140, (sw.Leaf(1, "D", vent=True),)),  # vent pair: its knobs alone set the depth
     ],
 )
 def test_multi_leaf_bbox_matches_catalogue_size(spec: sw.Spec) -> None:

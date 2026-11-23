@@ -54,7 +54,7 @@ MODEL_DEPTH = DEPTH + HANDLE_PROJ
 BAR_W, BAR_INSET = 2.5, 8.0  # coupling bar width, distance from the sash side
 PANEL_T = 2.0  # vent door: solid wooden slab flush with the room face
 KNOB = 2.4  # vent door knob, square cross-section
-VENT_MIN = 8.0  # narrowest vent door that still fits its knob clear of the hinge
+VENT_MIN = 8.0  # narrowest vent door that still fits its lever or knob clear of the hinge
 MESH_T = 0.1
 LOUVRE_T, LOUVRE_PITCH = 1.0, 4.0  # each slat steps down by LOUVRE_T toward the exterior
 BLIND_T, BLIND_PITCH = 0.2, 2.2  # venetian blind slats between the two sash layers, open (horizontal)
@@ -152,7 +152,7 @@ def sashes(width: float, leaves: tuple[Leaf, ...]) -> list[Sash]:
 
 
 def check_size(width: float, height: float, leaves: tuple[Leaf, ...] = SINGLE) -> None:
-    """Smallest size whose coupling bars (vent doors: knob) and hinge knuckles don't run into each other."""
+    """Smallest size whose coupling bars (vent doors: lever or knob) and hinge knuckles don't run into each other."""
     if len(sashes(width, leaves)) > 9:
         # SH3D matches sash parts by name prefix, so sweethome3d_hinge_1 would also claim hinge_10.
         raise ValueError(f"window {spec_label(Spec(width, height, leaves))} has more than 9 sashes")
