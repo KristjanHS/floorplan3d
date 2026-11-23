@@ -16,15 +16,15 @@ from lxml import etree
 
 import sh3d
 import walls as wl
+from sh3d_xmltext import drop_refs, element_re, fmt_num, open_attrs
 
 AUTO_PROP = "floorplan3d.auto"  # Stage 5 tag, value = geometry sig; tagged walls are never ground truth
 AUTO_ID = "auto-"
 # home-level properties: ids the last write emitted / GUI-deleted auto ids it never re-emits (Stage 5 tombstone)
 WRITTEN_PROP, DELETED_PROP = f"{AUTO_PROP}.written", f"{AUTO_PROP}.deleted"
 SIG_TOL_CM = 0.01  # SH3D stores floats: a resave may reprint a coordinate, an edit moves it further
-WALL_RE = re.compile(r"[ \t]*<wall\b[^>]*?(?:/>|(?<!/)>.*?</wall>)[ \t]*\n?", re.DOTALL)
+WALL_RE = element_re("wall")
 AUTO_PROP_RE = re.compile(rf"""\s*<property name=(['"]){re.escape(AUTO_PROP)}\1 value=(['"])([^'"]*)\2\s*/>""")
-ATTR_RE = re.compile(r"""(\w+)=(['"])(.*?)\2""")
 GEOMETRY = ("xStart", "yStart", "xEnd", "yEnd", "thickness")
 WRITTEN_ATTRS = {"id", "level", *GEOMETRY, "height"}
 DARK = 128  # grey level below which a px counts as ink
@@ -179,26 +179,17 @@ def rooms(src: Path, work: Path, name: str) -> None:
         print(f"L{i}: {len(level_rooms)} rooms, {len(gen)} walls{span}, {len(hol)} holes{widths} -> {out}")
 
 
-def _num(v: float) -> str:
-    out = f"{v:.2f}".rstrip("0").rstrip(".")
-    return "0" if out == "-0" else out
-
-
 def _sig(w: wl.Wall, height: str) -> str:
-    return ",".join(_num(v) for v in (*w.p1, *w.p2, w.thickness)) + (f",{_num(float(height))}" if height else "")
+    return ",".join(fmt_num(v) for v in (*w.p1, *w.p2, w.thickness)) + (f",{fmt_num(float(height))}" if height else "")
 
 
 def _wall_id(level: str | None, sig: str) -> str:
     return AUTO_ID + hashlib.sha256(f"{level}|{sig}".encode()).hexdigest()[:12]
 
 
-def _open_attrs(wall_xml: str) -> dict[str, str]:
-    return {k: v for k, _, v in ATTR_RE.findall(wall_xml[: wall_xml.index(">")])}
-
-
 def _unedited(wall_xml: str, prop: re.Match[str]) -> bool:
     """Exactly as written: same attributes and id, no added children, geometry + height within SIG_TOL_CM."""
-    attrs = _open_attrs(wall_xml)
+    attrs = open_attrs(wall_xml)
     if set(attrs) - WRITTEN_ATTRS or re.search(r"<(?!/?wall\b)", wall_xml.replace(prop.group(0), "", 1)):
         return False
     try:
@@ -230,10 +221,10 @@ def _wall_xml(level: str | None, w: wl.Wall, height: str) -> tuple[str, str]:
     wid = _wall_id(level, sig)
     lv = f" level='{level}'" if level else ""
     (x1, y1), (x2, y2) = w.p1, w.p2
-    coords = f"xStart='{_num(x1)}' yStart='{_num(y1)}' xEnd='{_num(x2)}' yEnd='{_num(y2)}'"
+    coords = f"xStart='{fmt_num(x1)}' yStart='{fmt_num(y1)}' xEnd='{fmt_num(x2)}' yEnd='{fmt_num(y2)}'"
     h = f" height='{height}'" if height else ""
     return wid, (
-        f"  <wall id='{wid}'{lv} {coords}{h} thickness='{_num(w.thickness)}'>\n"
+        f"  <wall id='{wid}'{lv} {coords}{h} thickness='{fmt_num(w.thickness)}'>\n"
         f"    <property name='{AUTO_PROP}' value='{sig}'/>\n  </wall>\n"
     )
 
@@ -267,18 +258,18 @@ def write_walls(text: str, generated: Generated) -> tuple[str, Generated, int]:
     order: walls precede rooms), clear refs to dropped ids not re-inserted. Every other byte is kept.
     Tombstone: an auto id in WRITTEN_PROP now absent from the file was deleted in the GUI; it joins DELETED_PROP and is
     never emitted again. Returns the text, the walls actually inserted and the number of tombstoned walls withheld."""
-    present = {_open_attrs(m.group(0)).get("id") for m in WALL_RE.finditer(text)}
+    present = {open_attrs(m.group(0)).get("id") for m in WALL_RE.finditer(text)}
     deleted = (_home_ids(text, DELETED_PROP) | _home_ids(text, WRITTEN_PROP)) - present
     removed: set[str] = set()
 
     def drop(m: re.Match[str]) -> str:
         if AUTO_PROP_RE.search(m.group(0)) is None:
             return m.group(0)
-        removed.add(_open_attrs(m.group(0))["id"])
+        removed.add(open_attrs(m.group(0))["id"])
         return ""
 
     text = WALL_RE.sub(drop, text)
-    ids = {_open_attrs(m.group(0)).get("id") for m in WALL_RE.finditer(text)}  # an edited wall keeps its auto- id
+    ids = {open_attrs(m.group(0)).get("id") for m in WALL_RE.finditer(text)}  # an edited wall keeps its auto- id
     block, new_ids, inserted, withheld = "", set(), [], set()
     for level, w, height in generated:
         wid, xml = _wall_xml(level, w, height)
@@ -289,9 +280,7 @@ def write_walls(text: str, generated: Generated) -> tuple[str, Generated, int]:
             inserted.append((level, w, height))
             block += xml
     gone = removed - new_ids
-    text = re.sub(
-        r"""\s(?:wallAtStart|wallAtEnd)=(['"])([^'"]*)\1""", lambda m: "" if m.group(2) in gone else m.group(0), text
-    )
+    text = drop_refs(text, gone)
     last = None
     for last in WALL_RE.finditer(text):
         pass

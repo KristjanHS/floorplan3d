@@ -10,6 +10,7 @@ from test_sh3d import make_sh3d
 
 import sh3d
 import sh3d_walls
+import sh3d_xmltext
 
 BG = "<backgroundImage image='{img}' scaleDistance='100' scaleDistanceXStart='10' scaleDistanceYStart='20' scaleDistanceXEnd='10' scaleDistanceYEnd='70'{origin}/>"
 HOME = """<home version='7400' name='t' wallHeight='250'>{home_bg}
@@ -158,7 +159,7 @@ OLD = tagged(300)
 ROOMS = room(0, 0, 100, 200) + room(115, 0, 215, 200) + "\n"
 WRITE_HOME = (
     "<?xml version='1.0'?>\n<home version='7400' name='t' wallHeight='250'>\n  <level id='L0' height='260'/>\n"
-    + HAND.format(ref=f" wallAtStart='{sh3d_walls._open_attrs(OLD)['id']}'")
+    + HAND.format(ref=f" wallAtStart='{sh3d_xmltext.open_attrs(OLD)['id']}'")
     + OLD
     + tagged(320, x0="0.004")  # SH3D float reprint: still unedited
     + tagged(340, x0="-20")  # moved 20 cm in the GUI
@@ -213,7 +214,7 @@ def test_write_replaces_tagged_keeps_edited_and_hand_walls(home_src: Path, tmp_p
     (new,) = [w for w in walls if sh3d_walls.AUTO_PROP in w]
     assert "level='L0'" in new and "height='260'" in new and "thickness='15'" in new
     assert out.endswith(ROOMS + "</home>\n")
-    wid = sh3d_walls._open_attrs(new)["id"]
+    wid = sh3d_xmltext.open_attrs(new)["id"]
     home_src.write_text(out.replace(HAND.format(ref=""), HAND.format(ref=f" wallAtEnd='{wid}'")))
     joined = home_src.read_text()
     git(tmp_path / "src", "commit", "-q", "-am", "w")
@@ -222,7 +223,7 @@ def test_write_replaces_tagged_keeps_edited_and_hand_walls(home_src: Path, tmp_p
 
 
 def wall_by_id(text: str, wid: str) -> list[str]:
-    return [w for w in sh3d_walls.WALL_RE.findall(text) if sh3d_walls._open_attrs(w)["id"] == wid]
+    return [w for w in sh3d_walls.WALL_RE.findall(text) if sh3d_xmltext.open_attrs(w)["id"] == wid]
 
 
 def test_write_edited_wall_keeps_its_id_no_duplicate(
@@ -231,7 +232,7 @@ def test_write_edited_wall_keeps_its_id_no_duplicate(
     assert sh3d_walls.main(write_cli(tmp_path)) == 0
     out = home_src.read_text()
     (new,) = [w for w in auto_walls(out) if sh3d_walls.AUTO_PROP in w]
-    wid, x1, x2 = (sh3d_walls._open_attrs(new)[k] for k in ("id", "xStart", "xEnd"))
+    wid, x1, x2 = (sh3d_xmltext.open_attrs(new)[k] for k in ("id", "xStart", "xEnd"))
     moved_x = (str(float(x1) + 20), str(float(x2) + 20))
     moved = new.replace(f"xStart='{x1}' ", f"xStart='{moved_x[0]}' ").replace(f"xEnd='{x2}' ", f"xEnd='{moved_x[1]}' ")
     home_src.write_text(out.replace(new, moved))
@@ -239,7 +240,7 @@ def test_write_edited_wall_keeps_its_id_no_duplicate(
     capsys.readouterr()
     assert sh3d_walls.main(write_cli(tmp_path)) == 0  # was: DTD duplicate ID, Home.xml restored
     (kept,) = wall_by_id(home_src.read_text(), wid)
-    attrs = sh3d_walls._open_attrs(kept)
+    attrs = sh3d_xmltext.open_attrs(kept)
     assert (attrs["xStart"], attrs["xEnd"]) == moved_x and sh3d_walls.AUTO_PROP not in kept  # adopted, untagged
     assert "L0: 0 walls written" in capsys.readouterr().out  # its id is taken: nothing was inserted
 
@@ -250,7 +251,7 @@ def test_write_gui_deleted_auto_wall_stays_deleted(
     assert sh3d_walls.main(write_cli(tmp_path)) == 0
     out = home_src.read_text()
     (new,) = [w for w in auto_walls(out) if sh3d_walls.AUTO_PROP in w]
-    wid = sh3d_walls._open_attrs(new)["id"]
+    wid = sh3d_xmltext.open_attrs(new)["id"]
     assert wid in sh3d_walls._home_ids(out, sh3d_walls.WRITTEN_PROP)
     home_src.write_text(out.replace(new, ""))  # deleted in the GUI
     git(tmp_path / "src", "commit", "-q", "-am", "deleted")
