@@ -1,4 +1,5 @@
 import argparse
+import itertools
 import re
 import zipfile
 from pathlib import Path
@@ -103,7 +104,9 @@ def test_parse_size_rejects_garbage() -> None:
     vented = sw.parse_size("200x150=36Lv,164R")
     assert sw.parse_size("180x220=90D").leaves == (sw.Leaf(1, "D"),)
     assert vented.leaves == (sw.Leaf(36, "L", vent=True), sw.Leaf(164, "R"))
-    for bad in ("200x150=36X", "200x150=0L,10R", "200x150=", "100x140=0L"):
+    assert sw.parse_size("200x150=70Lv,130Ru") == VENT_RAISED
+    assert sw.size_tag(*VENT_RAISED) == "200x150-70Lv-130Ru"  # catalogue id tells a raised blind apart
+    for bad in ("200x150=36X", "200x150=0L,10R", "200x150=", "100x140=0L", "200x150=36Lvu,164R"):
         with pytest.raises(argparse.ArgumentTypeError):
             sw.parse_size(bad)
     with pytest.raises(argparse.ArgumentTypeError, match="<width>x<height>"):
@@ -129,6 +132,7 @@ def test_library_zip_entries_and_catalogue(tmp_path: Path) -> None:
 VENTED = sw.Spec(200, 150, (sw.Leaf(36, "D", vent=True), sw.Leaf(164, "R")))
 PAIR = sw.Spec(180, 220, (sw.Leaf(1, "D"),))
 POSTED = sw.Spec(180, 220, (sw.Leaf(1), sw.Leaf(1, "R")))
+VENT_RAISED = sw.Spec(200, 150, (sw.Leaf(70, "L", vent=True), sw.Leaf(130, "R", raised=True)))
 
 
 def group(groups: list[sw.Group], name: str) -> list[sw.Box]:
@@ -175,10 +179,42 @@ def test_blinds_sit_in_the_gap_between_layers() -> None:
     assert len(blinds) * sw.BLIND_PITCH > PAIR.height - 2 * (sw.FRAME + sw.OUTER_FACE) - 2 * sw.BLIND_PITCH
 
 
+def test_single_vent_leaf_has_the_lever_vent_pair_keeps_knobs() -> None:
+    groups = sw.window_groups(*VENT_RAISED)
+
+    def drop(boxes: list[sw.Box]) -> float:
+        return max(b[3] for b in boxes) - min(b[2] for b in boxes)
+
+    vent_lever = group(groups, "sweethome3d_opening_on_hinge_1_handle")
+    glass_lever = group(groups, "sweethome3d_opening_on_hinge_2_handle")
+    knob = group(sw.window_groups(*VENTED), "sweethome3d_opening_on_hinge_1_handle")
+    assert drop(vent_lever) == pytest.approx(drop(glass_lever))
+    assert drop(vent_lever) > 12
+    assert drop(knob) < 4
+    # Vent hinged left, glass hinged right: the two levers meet at the post at 70.
+    assert 70 - 10 < handle_x(groups, 1) < 70 < handle_x(groups, 2) < 70 + 10
+
+
+def test_raised_blind_stacks_every_slat_at_the_top() -> None:
+    raised = group(sw.window_groups(*VENT_RAISED), "sweethome3d_opening_on_hinge_2_blinds")
+    lowered_spec = VENT_RAISED._replace(leaves=(VENT_RAISED.leaves[0], sw.Leaf(130, "R")))
+    lowered = group(sw.window_groups(*lowered_spec), "sweethome3d_opening_on_hinge_2_blinds")
+    top = VENT_RAISED.height - sw.FRAME - sw.CLEAR - sw.OUTER_FACE  # top of the outer sash's opening
+    assert len(raised) == len(lowered)
+    assert max(b[3] for b in raised) <= top
+    pack = top - min(b[2] for b in raised)
+    assert pack == pytest.approx(sw.BLIND_STACK_PITCH * len(raised), abs=0.5)
+    assert pack < (top - min(b[2] for b in lowered)) / 4  # a short pack, not a spread blind
+    ys = sorted(b[2] for b in raised)
+    assert all(b - a >= sw.BLIND_T for a, b in itertools.pairwise(ys))  # slats don't overlap
+    assert min(b[2] for b in lowered) < top - 100  # the lowered blind still fills the opening
+
+
 @pytest.mark.parametrize(
     "spec",
     [
         VENTED,
+        VENT_RAISED,
         PAIR,
         POSTED,
         sw.Spec(100, 140, (sw.Leaf(1, "L", vent=True),)),  # all vent: the knob alone sets the depth

@@ -9,9 +9,10 @@ stretch one model's profiles with the piece).
 A size can split into columns (leaves) separated by fixed centre posts: `200x150=36Dv,164R` puts the
 post centre at 36 cm (weights scale to the width) and hinges the 164 leaf right; `D` splits a column
 into two half-width doors hinged left and right that meet in the middle without a post (cabinet style).
-`v` makes a vent column: glass-less solid wooden doors with knobs, a fixed insect mesh in the middle
-layer and fixed exterior louvres in place of the outer sash. Glazed leaves carry an open venetian blind
-between their layers.
+`v` makes a vent column: glass-less solid wooden doors, a fixed insect mesh in the middle layer and
+fixed exterior louvres in place of the outer sash. A single vent leaf (`L`/`R`) carries the glazed
+leaves' lever handle; a `D` vent pair carries knobs. Glazed leaves carry an open venetian blind between
+their layers; `u` raises it (`130Ru`): all its slats stack in a pack at the top of the opening.
 
 SH3D naming: leaf N's sash, handle and panes rotate around `sweethome3d_hinge_N`
 (ModelManager.HINGE_PREFIX / OPENING_ON_HINGE_PREFIX / WINDOW_PANE_ON_HINGE_PREFIX); the axis is the
@@ -57,6 +58,7 @@ VENT_MIN = 8.0  # narrowest vent door that still fits its knob clear of the hing
 MESH_T = 0.1
 LOUVRE_T, LOUVRE_PITCH = 1.0, 4.0  # each slat steps down by LOUVRE_T toward the exterior
 BLIND_T, BLIND_PITCH = 0.2, 2.2  # venetian blind slats between the two sash layers, open (horizontal)
+BLIND_STACK_PITCH = 0.41  # raised blind: slat spacing in the top pack (pack depth = slat count x this)
 ELEVATION = 90.0  # default sill height
 
 MATERIALS = {
@@ -78,6 +80,7 @@ class Leaf(NamedTuple):
     weight: float
     hinge: str = "L"
     vent: bool = False
+    raised: bool = False  # glazed leaf: blind stacked at the top
 
 
 SINGLE = (Leaf(1.0),)  # one leaf hinged left: a plain --size
@@ -96,6 +99,8 @@ class Sash(NamedTuple):
     x1: float
     right: bool
     vent: bool
+    lever: bool = True  # lever handle; False = vent-pair knob
+    raised: bool = False
 
 
 @dataclass
@@ -136,9 +141,13 @@ def sashes(width: float, leaves: tuple[Leaf, ...]) -> list[Sash]:
         sx0, sx1 = cx0 + CLEAR, cx1 - CLEAR
         if leaf.hinge == "D":
             mid = (sx0 + sx1) / 2
-            out += [Sash(sx0, mid - CLEAR / 2, False, leaf.vent), Sash(mid + CLEAR / 2, sx1, True, leaf.vent)]
+            lever = not leaf.vent
+            out += [
+                Sash(sx0, mid - CLEAR / 2, False, leaf.vent, lever, leaf.raised),
+                Sash(mid + CLEAR / 2, sx1, True, leaf.vent, lever, leaf.raised),
+            ]
         else:
-            out.append(Sash(sx0, sx1, leaf.hinge == "R", leaf.vent))
+            out.append(Sash(sx0, sx1, leaf.hinge == "R", leaf.vent, True, leaf.raised))
     return out
 
 
@@ -164,6 +173,13 @@ def sash_groups(n: int, s: Sash, height: float) -> list[Group]:
     outer_z1 = OUTER_Z0 + OUTER_T
     hcy = (sy0 + sy1) / 2
     prefix = f"sweethome3d_opening_on_hinge_{n}"
+    # Lever handle on the free stile, pointing down (closed).
+    hcx = sx1 - INNER_FACE / 2
+    lever = [
+        (hcx - 1.5, hcx + 1.5, hcy - 3.5, hcy + 3.5, inner_z1, inner_z1 + 0.8),  # rosette
+        (hcx - 0.6, hcx + 0.6, hcy - 0.6, hcy + 0.6, inner_z1 + 0.8, inner_z1 + 3.5),  # neck
+        (hcx - 0.8, hcx + 0.8, hcy - 12.0, hcy + 0.8, inner_z1 + 3.5, inner_z1 + HANDLE_PROJ),  # lever
+    ]
 
     # Hinge knuckles sit in the sash-to-frame gap at the room face; their centre is the swing axis.
     hx0 = sx0 - CLEAR - 0.7
@@ -178,7 +194,7 @@ def sash_groups(n: int, s: Sash, height: float) -> list[Group]:
     )
 
     if s.vent:
-        # A solid wooden door with a knob on its free edge; mesh and louvres stay in the frame.
+        # A solid wooden door with a lever or knob on its free edge; mesh and louvres stay in the frame.
         kx = sx1 - 1.5 - KNOB / 2
         knob = [
             (kx - 1.5, kx + 1.5, hcy - 1.5, hcy + 1.5, inner_z1, inner_z1 + 0.5),  # rosette
@@ -187,7 +203,7 @@ def sash_groups(n: int, s: Sash, height: float) -> list[Group]:
         groups = [
             hinges,
             Group(prefix, "wood", [(sx0, sx1, sy0, sy1, inner_z1 - PANEL_T, inner_z1)]),
-            Group(f"{prefix}_handle", "handle", knob),
+            Group(f"{prefix}_handle", "handle", lever if s.lever else knob),
         ]
     else:
 
@@ -196,13 +212,6 @@ def sash_groups(n: int, s: Sash, height: float) -> list[Group]:
             e = face - GLASS_BITE
             return (sx0 + e, sx1 - e, sy0 + e, sy1 - e, zc - thick / 2, zc + thick / 2)
 
-        # Handle on the inner sash's free stile, lever pointing down (closed).
-        hcx = sx1 - INNER_FACE / 2
-        handle = [
-            (hcx - 1.5, hcx + 1.5, hcy - 3.5, hcy + 3.5, inner_z1, inner_z1 + 0.8),  # rosette
-            (hcx - 0.6, hcx + 0.6, hcy - 0.6, hcy + 0.6, inner_z1 + 0.8, inner_z1 + 3.5),  # neck
-            (hcx - 0.8, hcx + 0.8, hcy - 12.0, hcy + 0.8, inner_z1 + 3.5, inner_z1 + HANDLE_PROJ),  # lever
-        ]
         # Coupling bars: flat straps on the top and bottom sash edges bridging the gap between layers,
         # one near each side.
         bar_t = 0.3
@@ -214,11 +223,14 @@ def sash_groups(n: int, s: Sash, height: float) -> list[Group]:
         # Venetian blind in the air gap between the layers, hung inside the outer sash's opening.
         bx0, bx1, by0, by1 = sx0 + OUTER_FACE, sx1 - OUTER_FACE, sy0 + OUTER_FACE, sy1 - OUTER_FACE
         bz0, bz1 = outer_z1 + 0.25, INNER_Z0 - 0.25
-        blinds = [
-            (bx0, bx1, y, y + BLIND_T, bz0, bz1)
-            for k in range(int((by1 - by0) // BLIND_PITCH))
-            for y in (by0 + BLIND_PITCH / 2 + k * BLIND_PITCH,)
-        ]
+        # Raised: the same slats stacked down from the top of the opening.
+        slats = range(int((by1 - by0) // BLIND_PITCH))
+        ys = (
+            [by1 - (k + 1) * BLIND_STACK_PITCH for k in slats]
+            if s.raised
+            else [by0 + BLIND_PITCH / 2 + k * BLIND_PITCH for k in slats]
+        )
+        blinds = [(bx0, bx1, y, y + BLIND_T, bz0, bz1) for y in ys]
         groups = [
             hinges,
             Group(
@@ -228,7 +240,7 @@ def sash_groups(n: int, s: Sash, height: float) -> list[Group]:
                 + ring(sx0, sx1, sy0, sy1, OUTER_Z0, outer_z1, OUTER_FACE),
             ),
             Group(f"{prefix}_coupling", "hardware", bars),
-            Group(f"{prefix}_handle", "handle", handle),
+            Group(f"{prefix}_handle", "handle", lever),
             Group(f"{prefix}_blinds", "blind", blinds),
             Group(
                 f"sweethome3d_window_pane_on_hinge_{n}",
@@ -377,16 +389,16 @@ NUM = r"\d+(?:\.\d+)?"
 
 
 def parse_size(text: str) -> Spec:
-    m = re.fullmatch(rf"({NUM})x({NUM})(?:=((?:{NUM}[LRD]v?)(?:,{NUM}[LRD]v?)*))?", text)
+    m = re.fullmatch(rf"({NUM})x({NUM})(?:=((?:{NUM}[LRD][vu]?)(?:,{NUM}[LRD][vu]?)*))?", text)
     if not m:
         raise argparse.ArgumentTypeError(
-            f"size '{text}' must be <width>x<height>[=<leaf>,...] in cm, leaf = <weight><L|R|D>[v], e.g. 100x140 or 200x150=36Dv,164R"
+            f"size '{text}' must be <width>x<height>[=<leaf>,...] in cm, leaf = <weight><L|R|D>[v|u], e.g. 100x140 or 200x150=36Dv,164Ru"
         )
     if not m.group(3):
         return Spec(float(m.group(1)), float(m.group(2)))
     leaves = tuple(
-        Leaf(float(lm.group(1)), lm.group(2), bool(lm.group(3)))
-        for lm in (re.fullmatch(rf"({NUM})([LRD])(v?)", c) for c in m.group(3).split(","))
+        Leaf(float(lm.group(1)), lm.group(2), lm.group(3) == "v", lm.group(3) == "u")
+        for lm in (re.fullmatch(rf"({NUM})([LRD])([vu]?)", c) for c in m.group(3).split(","))
         if lm
     )
     if any(leaf.weight <= 0 for leaf in leaves):
@@ -397,7 +409,7 @@ def parse_size(text: str) -> Spec:
 
 
 def leaf_label(leaf: Leaf) -> str:
-    return f"{leaf.weight:g}{leaf.hinge}{'v' if leaf.vent else ''}"
+    return f"{leaf.weight:g}{leaf.hinge}{'v' if leaf.vent else ''}{'u' if leaf.raised else ''}"
 
 
 def spec_label(spec: Spec) -> str:
