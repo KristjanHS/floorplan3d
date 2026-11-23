@@ -143,7 +143,7 @@ walls-rooms:
 walls:
 	uv run python scripts/sh3d_walls.py write $(NAME)
 
-# SIZES = space-separated <width>x<height>[=<weight><L|R|D>[v],...] cm (D = door pair, v = vent), e.g.
+# SIZES = space-separated <width>x<height>[=<weight><L|R|D>[v|u],...] cm (D = door pair, v = vent, u = blind raised), e.g.
 # SIZES="100x140 200x150=36Dv,164R"; empty = one 100x140 window.
 window-lib:
 	uv run python scripts/sh3d_window.py $(foreach s,$(SIZES),--size $(s)) --preview output/sh3d/coupled-window-preview.png

@@ -514,7 +514,7 @@ def main(argv: list[str] | None = None) -> int:
         "--size",
         type=parse_size,
         action="append",
-        help="<width>x<height>[=<weight><L|R|D>[v],...] cm, e.g. 200x150=36Dv,164R; repeatable (default 100x140)",
+        help="<width>x<height>[=<weight><L|R|D>[v|u],...] cm, e.g. 200x150=36Dv,164R; repeatable (default 100x140)",
     )
     parser.add_argument("--out", type=Path, default=Path("output/sh3d/coupled-windows.sh3f"))
     parser.add_argument("--preview", type=Path, help="also render the first size, sashes half open, to this PNG")
