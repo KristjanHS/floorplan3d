@@ -31,7 +31,7 @@
 
 ## Run-path findings and their fixes
 
-| # | Finding | Fix in floorplan3d |
+| # | Finding | Fix in sweethome3d-tools |
 |---|---|---|
 | F1 | 2022 pins with known CVEs: pillow 9.0.1 (51 advisory groups, max CVSS 9.8), opencv-python 4.2.0.34 (GHSA-qr4w-53vh-m672, 8.8), setuptools 54.1.0 (direct pin), and urllib3/idna (transitive, via requests) | `uv add opencv-python numpy scipy pillow matplotlib pyfiglet` at current versions. Skip `configparser` and `future-fstrings` (stdlib / not needed on 3.12), `requests` (server only), and `black`/`pytest`/`setuptools` (dev only). |
 | F2 | `FloorplanToBlenderLib/stacking.py:63,65` passes each stacking-file line to `eval()` | `convert.py` never uses stacking mode, and is never given a stacking file someone else wrote. |

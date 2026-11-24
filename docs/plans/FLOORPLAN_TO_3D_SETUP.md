@@ -28,7 +28,7 @@ Output per floor: `.blend` file + `.glb` + `.obj` (for Sweet Home 3D / other too
 
 ## Repo layout
 ```
-floorplan3d/
+sweethome3d-tools/
   README.md          # how to run, for me (short)
   NOTES.md           # decisions, upstream quirks found, version bumps
   Makefile           # make setup | make preprocess | make convert | make export | make models

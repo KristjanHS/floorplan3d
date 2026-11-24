@@ -1,4 +1,4 @@
-# floorplan3d
+# sweethome3d-tools
 
 Scanned floor-plan PDFs → 3D models (`.blend` / `.glb` / `.obj` + preview), scaled to metres, via
 [FloorplanToBlender3d](https://github.com/grebtsew/FloorplanToBlender3d).

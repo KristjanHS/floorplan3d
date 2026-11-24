@@ -1,5 +1,5 @@
 [project]
-name = "floorplan3d"
+name = "sweethome3d-tools"
 version = "0.1.0"
 description = "Scanned floor-plan PDFs to scaled 3D models via FloorplanToBlender3d"
 requires-python = ">=3.12,<3.13"
