@@ -1,17 +1,40 @@
 # sweethome3d-tools
 
-Scanned floor-plan PDFs → 3D models (`.blend` / `.glb` / `.obj` + preview), scaled to metres, via
-[FloorplanToBlender3d](https://github.com/grebtsew/FloorplanToBlender3d).
+Sweet Home 3D tools: scanned floor plans to 3D, git-tracked editing.
 
-Status: bootstrap only — build plan in `docs/plans/FLOORPLAN_TO_3D_SETUP.md`.
+Turns scanned floor-plan PDFs into 3D models with [FloorplanToBlender3d](https://github.com/grebtsew/FloorplanToBlender3d), and keeps Sweet Home 3D homes as plain `Home.xml` under git.
+Upstream is pinned at `2da4c95` and was reviewed before use ([security review](docs/security-review-FloorplanToBlender3d.md)); its code runs inside `bwrap --unshare-all`.
 
-## SweetHome3D editing
+## Quick start
 
-A git-tracked round-trip between the SweetHome3D GUI and an unpacked `Home.xml`, with auto-pull, DTD validation,
-plan previews and room-gap wall generation. When to use the GUI, a `make` target or Claude Code:
-[`docs/sweethome3d-workflow.md`](docs/sweethome3d-workflow.md).
+Needs Linux or WSL, [uv](https://docs.astral.sh/uv/), Python 3.12, Blender 5.2.4 LTS (`blender` on `PATH` or `BLENDER=`) and `bwrap`. SH3D editing also needs the Sweet Home 3D 7.6.1 source zip in `work/sh3d-src/` (fetch command in `NOTES.md`).
 
-`homes/`, `sh3d_src/` and `backups/` are local, untracked here.
-`validate` and `push` rebuild the DTD from `SH3D_SRC_ZIP` (default `work/sh3d-src/SweetHome3D-7.6.1-src.zip`).
+```bash
+git clone --recurse-submodules https://github.com/KristjanHS/sweethome3d-tools
+cd sweethome3d-tools && make sync
+cp plans.example.yaml plans.yaml   # set each floor's PDF and two calibration points
+make models
+```
 
-License: MIT for this repo's code, except `scripts/ftb_generate.py` (GPL-3.0: it imports upstream). The upstream submodule under `vendor/` is GPL-3.0.
+## What it does
+
+- PDF to `.blend`, `.glb` and `.obj` plus a preview image, scaled to metres from two calibration points.
+- Round-trips a Sweet Home 3D home and its unpacked `Home.xml` with `make pull`, `make push` and `make validate` (DTD check). [docs/sweethome3d-workflow.md](docs/sweethome3d-workflow.md) says when to reach for the GUI, a `make` target or Claude Code.
+- Draws walls into the gaps between rooms with `make walls`; a re-run replaces only the walls you left unedited.
+- `homes/`, `sh3d_src/` and `backups/` hold your own homes. The repo ships none.
+
+## Tests
+
+`make check` runs the whitespace check, ruff, pyright and pytest. There is no CI; `make setup-hooks` runs the same gate as a pre-push hook.
+
+## Limits
+
+- Linux or WSL only. The upstream sandbox needs `bwrap`.
+- Upstream runs on OpenCV 5 and NumPy 2 only through 2 local shims ([upstream-pr-candidates.md](docs/upstream-pr-candidates.md)).
+- Plan images shrink to an 1800 px long side unless `max_side` in `plans.yaml` says otherwise.
+
+Built with Claude Code, following the method in [claudeconf](https://github.com/KristjanHS/claudeconf).
+
+## License
+
+MIT for this repo's code, except `scripts/ftb_generate.py` (GPL-3.0, because it imports upstream). The upstream submodule under `vendor/` is GPL-3.0.
