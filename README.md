@@ -21,7 +21,7 @@ make models
 - PDF to `.blend`, `.glb` and `.obj` plus a preview image, scaled to metres from two calibration points.
 - Round-trips a Sweet Home 3D home and its unpacked `Home.xml` with `make pull`, `make push` and `make validate` (DTD check). [docs/sweethome3d-workflow.md](docs/sweethome3d-workflow.md) says when to reach for the GUI, a `make` target or Claude Code.
 - Draws walls into the gaps between rooms with `make walls`; a re-run replaces only the walls you left unedited.
-- `homes/`, `sh3d_src/` and `backups/` hold your own homes. The repo ships none.
+- `homes/`, `sh3d_src/` and `backups/` hold your own homes; the repo ships none. Put a saved home at `homes/<name>.sh3d` and `make pull NAME=<name>` unpacks it to `sh3d_src/<name>/`.
 
 ## Tests
 
@@ -29,7 +29,7 @@ make models
 
 ## Limits
 
-- Linux or WSL only. The upstream sandbox needs `bwrap`.
+- Linux or WSL only. The upstream sandbox needs `bwrap`. `make push` and `make window-lib` end in `wslpath -w`, so they exit non-zero outside WSL.
 - Upstream runs on OpenCV 5 and NumPy 2 only through 2 local shims ([upstream-pr-candidates.md](docs/upstream-pr-candidates.md)).
 - Plan images shrink to an 1800 px long side unless `max_side` in `plans.yaml` says otherwise.
 
