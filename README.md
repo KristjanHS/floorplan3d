@@ -1,8 +1,6 @@
 # sweethome3d-tools
 
-Sweet Home 3D tools: scanned floor plans to 3D, git-tracked editing.
-
-Turns scanned floor-plan PDFs into 3D models with [FloorplanToBlender3d](https://github.com/grebtsew/FloorplanToBlender3d), and keeps Sweet Home 3D homes as plain `Home.xml` under git.
+Sweet Home 3D tools: git-tracked editing of your 3D home.
 Upstream is pinned at `2da4c95` and was reviewed before use ([security review](docs/security-review-FloorplanToBlender3d.md)); its code runs inside `bwrap --unshare-all`.
 
 ## Quick start
